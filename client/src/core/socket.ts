@@ -5,6 +5,8 @@ class GameSocket {
   private url: string;
   private reconnectTimer: number | null = null;
   private isIntentionalClose: boolean = false;
+  private lastJoinName: string | null = null;
+  private lastJoinModel: string = 'trex';
 
   constructor() {
     const host =
@@ -37,9 +39,13 @@ class GameSocket {
     }
 
     this.ws.onopen = () => {
-      useGameStore.getState().setConnected(true);
+      const store = useGameStore.getState();
+      store.setConnected(true);
       if (onConnected) {
         onConnected();
+      } else if (store.isJoined && this.lastJoinName) {
+        // Tự động vào lại phòng nếu mất mạng rồi có lại
+        this.join(this.lastJoinName, this.lastJoinModel);
       }
     };
 
@@ -95,6 +101,8 @@ class GameSocket {
   }
 
   public join(name: string, model: string = 'trex') {
+    this.lastJoinName = name;
+    this.lastJoinModel = model;
     this.send({
       type: 'JOIN',
       payload: { name, model },
@@ -142,6 +150,20 @@ class GameSocket {
     });
   }
 
+  public sendCrouch(crouching: boolean) {
+    this.send({
+      type: 'CROUCH',
+      payload: { crouching },
+    });
+  }
+
+  public sendRoar(callType: number = 1) {
+    this.send({
+      type: 'ROAR',
+      payload: { callType },
+    });
+  }
+
   private send(obj: unknown) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(obj));
@@ -150,6 +172,7 @@ class GameSocket {
 
   public disconnect() {
     this.isIntentionalClose = true;
+    this.lastJoinName = null;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

@@ -6,11 +6,11 @@ import { useGameStore } from '../store/useGameStore';
 import type { AnimState } from '../types/game';
 
 const FORWARD_CHARS = new Set(['w', 'ư', 'ơ']);
-const BACKWARD_CHARS = new Set(['s', 'á', 'ắ', 'ấ', 'é', 'ế', 'í', 'ó', 'ố', 'ớ', 'ú', 'ứ', 'ý']);
-const LEFT_CHARS = new Set(['a', 'â', 'ă', 'à', 'ả', 'ã', 'ạ']);
+const BACKWARD_CHARS = new Set(['s']);
+const LEFT_CHARS = new Set(['a', 'â', 'ă']);
 const RIGHT_CHARS = new Set(['d', 'đ']);
-const BITE_CHARS = new Set([' ', 'f', 'à', 'ằ', 'ầ', 'è', 'ề', 'ì', 'ò', 'ồ', 'ờ', 'ù', 'ừ', 'ỳ']);
-const ROAR_CHARS = new Set(['r', 'ả', 'ẳ', 'ẩ', 'ẻ', 'ể', 'ỉ', 'ỏ', 'ổ', 'ở', 'ủ', 'ử', 'ỷ']);
+const BITE_CHARS = new Set([' ', 'f']);
+const ROAR_CHARS = new Set(['r']);
 const TAIL_CHARS = new Set(['e', 'ê']);
 
 interface UseDinoControlsParams {
@@ -27,6 +27,9 @@ export function useDinoControls({
   const rotateCurrentModel90 = useGameStore((s) => s.rotateCurrentModel90);
   const triggerScent = useGameStore((s) => s.triggerScent);
   const setChatOpen = useGameStore((s) => s.setChatOpen);
+  const toggleNightVision = useGameStore((s) => s.toggleNightVision);
+  const setShowLeaderboard = useGameStore((s) => s.setShowLeaderboard);
+  const toggleMapOpen = useGameStore((s) => s.toggleMapOpen);
 
   const keys = useRef({
     forward: false,
@@ -35,7 +38,6 @@ export function useDinoControls({
     right: false,
     sprint: false,
   });
-
   const isRightMouseDown = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
   const cameraYaw = useRef(0);
@@ -52,13 +54,18 @@ export function useDinoControls({
     canvas.style.outline = 'none';
     canvas.focus();
 
-    const resetKeys = () => {
+    const resetMovementKeys = () => {
       keys.current.forward = false;
       keys.current.backward = false;
       keys.current.left = false;
       keys.current.right = false;
       keys.current.sprint = false;
+    };
+
+    const resetAllKeys = () => {
+      resetMovementKeys();
       isRightMouseDown.current = false;
+      setShowLeaderboard(false);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -68,11 +75,41 @@ export function useDinoControls({
         return;
       }
 
-      if (e.code === 'Escape' && store.isSettingsOpen) {
-        store.setSettingsOpen(false);
+      const code = e.code || '';
+      const key = (e.key || '').toLowerCase();
+      const keyCode = e.keyCode || 0;
+
+      if (code === 'Escape') {
+        if (store.isMapOpen) {
+          store.setMapOpen(false);
+          canvas.focus();
+        } else if (store.isSettingsOpen) {
+          store.setSettingsOpen(false);
+          canvas.focus();
+        } else if (store.deathInfo) {
+          store.dismissDeathOverlay();
+        }
         return;
       }
-      if (store.isSettingsOpen) return;
+
+      // Phím M: Mở / Đóng Bản Đồ Toàn Đảo
+      if ((code === 'KeyM' || key === 'm' || keyCode === 77) && !e.repeat) {
+        if (!store.isSettingsOpen) {
+          resetMovementKeys();
+          toggleMapOpen();
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+        return;
+      }
+
+      if (store.isSettingsOpen || store.isMapOpen) return;
+
+      if (code === 'Tab' || keyCode === 9) {
+        e.preventDefault();
+        setShowLeaderboard(true);
+        return;
+      }
 
       if (e.repeat) {
         e.preventDefault();
@@ -80,14 +117,10 @@ export function useDinoControls({
         return;
       }
 
-      const code = e.code || '';
-      const key = (e.key || '').toLowerCase();
-      const keyCode = e.keyCode || 0;
-
       if (code === 'Backspace' || keyCode === 8) return;
 
       if (code === 'Enter' || keyCode === 13) {
-        resetKeys();
+        resetMovementKeys();
         setChatOpen(true);
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -95,6 +128,45 @@ export function useDinoControls({
       }
 
       let handled = false;
+
+      if (code === 'KeyH' || key === 'h' || keyCode === 72) {
+        if (!store.isResting) {
+          resetMovementKeys();
+          socket.sendToggleRest();
+          soundEngine.playRest(true);
+        } else if (store.restUnlockLeft <= 0) {
+          socket.sendToggleRest();
+          soundEngine.playRest(false);
+        }
+        handled = true;
+      }
+
+      if (code === 'KeyN' || key === 'n' || keyCode === 78) {
+        toggleNightVision();
+        handled = true;
+      }
+      if (code === 'KeyT' || key === 't' || keyCode === 84) {
+        rotateCurrentModel90();
+        handled = true;
+      }
+      if (code === 'BracketLeft' || key === '[') {
+        setDinoScaleMultiplier(store.dinoScaleMultiplier - 0.1);
+        handled = true;
+      }
+      if (code === 'BracketRight' || key === ']') {
+        setDinoScaleMultiplier(store.dinoScaleMultiplier + 0.1);
+        handled = true;
+      }
+
+      // ĐANG NGHỈ NGƠI -> KHÓA TOÀN BỘ DI CHUYỂN, TẤN CÔNG & HÀNH ĐỘNG
+      if (store.isResting) {
+        resetMovementKeys();
+        if (handled) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+        return;
+      }
 
       if (code === 'KeyW' || code === 'ArrowUp' || keyCode === 87 || FORWARD_CHARS.has(key)) {
         keys.current.forward = true;
@@ -122,11 +194,6 @@ export function useDinoControls({
         soundEngine.playBite();
         handled = true;
       }
-      if (code === 'KeyR' || keyCode === 82 || ROAR_CHARS.has(key)) {
-        onTriggerOneShot('roar');
-        soundEngine.playRoar();
-        handled = true;
-      }
       if (code === 'KeyE' || keyCode === 69 || TAIL_CHARS.has(key)) {
         onTriggerOneShot('tail');
         socket.sendAttack('tail');
@@ -139,8 +206,8 @@ export function useDinoControls({
         soundEngine.playBite();
         handled = true;
       }
-      if (code === 'KeyH' || key === 'h' || keyCode === 72) {
-        socket.sendToggleRest();
+      if (code === 'KeyC' || key === 'c' || keyCode === 67) {
+        socket.sendCrouch(!store.isCrouching);
         handled = true;
       }
       if (code === 'KeyQ' || key === 'q' || keyCode === 81) {
@@ -148,16 +215,29 @@ export function useDinoControls({
         soundEngine.playScent();
         handled = true;
       }
-      if (code === 'KeyT' || key === 't' || keyCode === 84) {
-        rotateCurrentModel90();
+
+      if (code === 'KeyR' || keyCode === 82 || ROAR_CHARS.has(key) || code === 'Digit1') {
+        onTriggerOneShot('roar');
+        socket.sendRoar(1);
+        soundEngine.playRoar(1, store.growth);
         handled = true;
       }
-      if (code === 'BracketLeft' || key === '[') {
-        setDinoScaleMultiplier(useGameStore.getState().dinoScaleMultiplier - 0.1);
+      if (code === 'Digit2') {
+        onTriggerOneShot('roar');
+        socket.sendRoar(2);
+        soundEngine.playRoar(2, store.growth);
         handled = true;
       }
-      if (code === 'BracketRight' || key === ']') {
-        setDinoScaleMultiplier(useGameStore.getState().dinoScaleMultiplier + 0.1);
+      if (code === 'Digit3') {
+        onTriggerOneShot('roar');
+        socket.sendRoar(3);
+        soundEngine.playRoar(3, store.growth);
+        handled = true;
+      }
+      if (code === 'Digit4') {
+        onTriggerOneShot('roar');
+        socket.sendRoar(4);
+        soundEngine.playRoar(4, store.growth);
         handled = true;
       }
 
@@ -170,11 +250,13 @@ export function useDinoControls({
     const handleKeyUp = (e: KeyboardEvent) => {
       const code = e.code || '';
       const keyCode = e.keyCode || 0;
-
+      if (code === 'Tab' || keyCode === 9) {
+        setShowLeaderboard(false);
+        return;
+      }
       if (!code && keyCode !== 87 && keyCode !== 83 && keyCode !== 65 && keyCode !== 68) {
         return;
       }
-
       if (code === 'KeyW' || code === 'ArrowUp' || keyCode === 87) keys.current.forward = false;
       if (code === 'KeyS' || code === 'ArrowDown' || keyCode === 83) keys.current.backward = false;
       if (code === 'KeyA' || code === 'ArrowLeft' || keyCode === 65) keys.current.left = false;
@@ -185,19 +267,21 @@ export function useDinoControls({
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      const isCanvas = (e.target as HTMLElement)?.tagName === 'CANVAS';
-      if (isCanvas) {
-        canvas.focus();
-      }
+      // Chỉ xử lý khi click đúng lên canvas 3D WebGL (không bắt nhầm canvas Radar/Map)
+      const is3DCanvas = e.target === canvas;
+      if (!is3DCanvas) return;
+
+      canvas.focus();
+      const store = useGameStore.getState();
+      if (store.isMapOpen || store.isSettingsOpen) return;
+
       if (e.button === 2) {
         isRightMouseDown.current = true;
         lastMousePos.current = { x: e.clientX, y: e.clientY };
-      } else if (
-        e.button === 0 &&
-        isCanvas &&
-        !useGameStore.getState().isChatOpen &&
-        !useGameStore.getState().isSettingsOpen
-      ) {
+      } else if (e.button === 0) {
+        if (store.isChatOpen || store.isResting) {
+          return;
+        }
         onTriggerOneShot('bite');
         socket.sendAttack('bite');
         soundEngine.playBite();
@@ -215,10 +299,8 @@ export function useDinoControls({
           ? e.movementY
           : e.clientY - lastMousePos.current.y;
       lastMousePos.current = { x: e.clientX, y: e.clientY };
-
       const sensitivity = 0.006;
       cameraYaw.current -= dx * sensitivity;
-      // Kéo chuột lên trên (dy < 0) ngước nhìn tự do tới -81° ngắm trọn bầu trời/Mặt Trăng
       cameraPitch.current = Math.max(-1.42, Math.min(1.35, cameraPitch.current + dy * sensitivity));
     };
 
@@ -229,14 +311,20 @@ export function useDinoControls({
     };
 
     const handleWheel = (e: WheelEvent) => {
+      const store = useGameStore.getState();
+      if (store.isMapOpen || store.isSettingsOpen) return;
       zoomDistance.current = Math.max(4, Math.min(34, zoomDistance.current + e.deltaY * 0.012));
     };
 
-    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+    const handleContextMenu = (e: MouseEvent) => {
+      if (e.target === canvas) {
+        e.preventDefault();
+      }
+    };
 
     window.addEventListener('keydown', handleKeyDown, { capture: true, passive: false });
     window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', resetKeys);
+    window.addEventListener('blur', resetAllKeys);
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
@@ -246,14 +334,24 @@ export function useDinoControls({
     return () => {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', resetKeys);
+      window.removeEventListener('blur', resetAllKeys);
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('wheel', handleWheel);
       window.removeEventListener('contextmenu', handleContextMenu);
     };
-  }, [gl, onTriggerOneShot, setDinoScaleMultiplier, rotateCurrentModel90, triggerScent, setChatOpen]);
+  }, [
+    gl,
+    onTriggerOneShot,
+    setDinoScaleMultiplier,
+    rotateCurrentModel90,
+    triggerScent,
+    setChatOpen,
+    toggleNightVision,
+    setShowLeaderboard,
+    toggleMapOpen,
+  ]);
 
   return {
     keys,

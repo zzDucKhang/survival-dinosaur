@@ -19,15 +19,28 @@ const (
 	StateFlee   = "FLEE"
 )
 
-func StepBots(players map[string]*models.Player, foods map[string]*models.WorldFood, dt float64) []models.CombatEvent {
+func StepBots(
+	players map[string]*models.Player,
+	foods map[string]*models.WorldFood,
+	dt float64,
+) ([]models.CombatEvent, []models.ChatMessage, bool) {
 	var events []models.CombatEvent
+	var chats []models.ChatMessage
+	foodsChanged := false
 	now := time.Now()
+
+	// Thu thập danh sách người chơi thật 1 lần mỗi tick thay vì duyệt lại toàn map cho từng bot
+	var humans []*models.Player
+	for _, p := range players {
+		if !p.IsAI {
+			humans = append(humans, p)
+		}
+	}
 
 	for _, bot := range players {
 		if !bot.IsAI {
 			continue
 		}
-
 		if bot.AIState == "" {
 			bot.AIState = StateWander
 			pickRandomWaypoint(bot)
@@ -45,11 +58,10 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 			}
 		}
 
-		nearestPlayer, nearestDist := findNearestHuman(bot, players)
+		nearestPlayer, nearestDist := findNearestHuman(bot, humans)
 		hpRatio := float64(bot.HP) / float64(bot.MaxHP)
-
-		// Con non (< 0.50) gặp người chơi lớn hơn sẽ chủ động bỏ chạy
 		isBaby := bot.Growth < 0.50
+
 		if (hpRatio < 0.25 || (isBaby && nearestPlayer != nil && nearestPlayer.Growth > bot.Growth+0.2)) &&
 			nearestPlayer != nil && nearestDist < 28.0 {
 			if bot.AIState != StateFlee {
@@ -85,8 +97,10 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 			if bot.Model == "trex" {
 				aggroRange = 32.0
 			}
+			if nearestPlayer != nil && nearestPlayer.IsCrouching {
+				aggroRange *= 0.5
+			}
 			biteRange := 6.0 + bot.Growth*1.2
-
 			if nearestPlayer != nil && nearestDist <= biteRange {
 				bot.AIState = StateAttack
 				bot.TargetPlayerID = nearestPlayer.ID
@@ -104,10 +118,14 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 			bot.AnimState = "idle"
 			bot.Rotation += math.Sin(float64(now.UnixMilli())*0.001) * 0.2 * dt
 			if bot.StateTimer <= 0 {
-				if bot.Diet == models.DietHerbivore && rand.Float64() < 0.45 {
-					if plant := findNearestFood(bot, foods, "plant"); plant != nil {
-						bot.TargetX = plant.X + (rand.Float64()-0.5)*4.0
-						bot.TargetZ = plant.Z + (rand.Float64()-0.5)*4.0
+				desiredFood := "plant"
+				if bot.Diet == models.DietCarnivore {
+					desiredFood = "meat"
+				}
+				if rand.Float64() < 0.45 {
+					if foodNode := findNearestFood(bot, foods, desiredFood); foodNode != nil {
+						bot.TargetX = foodNode.X + (rand.Float64()-0.5)*3.5
+						bot.TargetZ = foodNode.Z + (rand.Float64()-0.5)*3.5
 						bot.StateTimer = 14.0
 						bot.AIState = StateGraze
 						break
@@ -118,19 +136,22 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 			}
 
 		case StateGraze:
-			dist := math.Hypot(bot.TargetX-bot.X, bot.TargetZ-bot.Z)
-			if dist < 3.5 || bot.StateTimer <= 0 {
+			dx, dz := bot.TargetX-bot.X, bot.TargetZ-bot.Z
+			if dx*dx+dz*dz < 12.25 || bot.StateTimer <= 0 {
 				bot.AIState = StateIdle
 				bot.StateTimer = 3.0 + rand.Float64()*3.0
 				bot.AnimState = "idle"
+				if bot.HP < bot.MaxHP {
+					bot.HP = int(math.Min(float64(bot.MaxHP), float64(bot.HP+15)))
+				}
 			} else {
-				steerAndMove(bot, bot.TargetX, bot.TargetZ, 4.4, 2.0, dt)
+				steerAndMove(bot, bot.TargetX, bot.TargetZ, 4.6, 2.0, dt)
 				bot.AnimState = "walk"
 			}
 
 		case StateWander:
-			dist := math.Hypot(bot.TargetX-bot.X, bot.TargetZ-bot.Z)
-			if dist < 4.5 || bot.StateTimer <= 0 {
+			dx, dz := bot.TargetX-bot.X, bot.TargetZ-bot.Z
+			if dx*dx+dz*dz < 20.25 || bot.StateTimer <= 0 {
 				bot.AIState = StateIdle
 				bot.StateTimer = 2.0 + rand.Float64()*3.0
 				bot.AnimState = "idle"
@@ -168,7 +189,6 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 			}
 			desiredYaw := math.Atan2(target.X-bot.X, target.Z-bot.Z)
 			bot.Rotation = lerpAngle(bot.Rotation, desiredYaw, math.Min(1.0, dt*5.0))
-
 			cooldown := 1650 * time.Millisecond
 			if now.Sub(bot.LastAttackTime) >= cooldown {
 				bot.LastAttackTime = now
@@ -180,11 +200,19 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 				} else if bot.Model == "tricera" || bot.Model == "stego" {
 					baseDmg = 17.0
 				}
-				dmg := int(math.Round(baseDmg * (0.55 + 0.55*bot.Growth)))
 
+				dmgFloat := baseDmg * (0.55 + 0.55*bot.Growth)
+				if target.IsResting {
+					dmgFloat *= 1.4
+				}
+				dmg := int(math.Round(dmgFloat))
 				hitX, hitY, hitZ := target.X, target.Y, target.Z
+
+				target.LastCombatTime = now
+				target.CombatTimerLeft = 30.0
+				bot.LastCombatTime = now
+
 				target.HP -= dmg
-				target.IsResting = false
 				if bot.Diet == models.DietCarnivore {
 					target.BleedTimer = math.Max(target.BleedTimer, 5.0)
 				}
@@ -192,16 +220,24 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 				isKill := false
 				if target.HP <= 0 {
 					isKill = true
-					carcassID := fmt.Sprintf("meat-%d", now.UnixNano())
+					foodsChanged = true
+					carcassID := fmt.Sprintf("meat-%d-%s", now.UnixNano(), target.ID)
 					foods[carcassID] = &models.WorldFood{
 						ID:        carcassID,
 						Type:      "meat",
-						X:         hitX,
-						Z:         hitZ,
+						X:         math.Round(hitX*100) / 100,
+						Z:         math.Round(hitZ*100) / 100,
 						Amount:    100,
 						MaxAmount: 100,
 						ExpiresAt: now.Add(120 * time.Second).Unix(),
 					}
+					chats = append(chats, models.ChatMessage{
+						ID:        fmt.Sprintf("aikill-%d-%s", now.UnixNano(), target.ID),
+						Sender:    "ISLE",
+						Text:      fmt.Sprintf("🦖 %s đã săn hạ %s!", bot.Name, target.Name),
+						IsSystem:  true,
+						Timestamp: now.UnixMilli(),
+					})
 
 					target.Growth = 0.45
 					target.MaxHP = calcScaledMaxHP(target.BaseMaxHP, target.Growth)
@@ -209,9 +245,28 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 					target.Hunger = 85
 					target.Thirst = 85
 					target.BleedTimer = 0
-					target.X = (rand.Float64() - 0.5) * 36.0
-					target.Z = (rand.Float64() - 0.5) * 36.0
-					target.Y = math.Max(-0.2, world.GetTerrainHeight(target.X, target.Z))
+					target.BleedTickAccum = 0
+					target.IsResting = false
+					target.RestUnlockLeft = 0
+					target.IsCrouching = false
+					target.CombatTimerLeft = 0
+					target.RegenRate = 0
+					target.LastCombatTime = time.Time{}
+					target.RespawnSeq++
+					target.LastKilledBy = bot.Name
+
+					angle := rand.Float64() * 2 * math.Pi
+					spawnR := 55.0 + rand.Float64()*120.0
+					rx, rz := world.ResolveObstacleCollision(
+						math.Cos(angle)*spawnR,
+						math.Sin(angle)*spawnR,
+						2.0,
+					)
+					target.X = rx
+					target.Z = rz
+					target.Y = world.GetEntityGroundHeight(rx, rz)
+					bot.AIState = StateWander
+					pickRandomWaypoint(bot)
 				}
 
 				events = append(events, models.CombatEvent{
@@ -243,14 +298,21 @@ func StepBots(players map[string]*models.Player, foods map[string]*models.WorldF
 			}
 		}
 
-		if (bot.AIState == StateIdle || bot.AIState == StateWander || bot.AIState == StateGraze) && bot.HP < bot.MaxHP {
-			if rand.Float64() < dt*0.9 {
-				bot.HP++
+		// Bot hồi máu sau 30s không giao chiến
+		if (bot.AIState == StateIdle || bot.AIState == StateWander || bot.AIState == StateGraze) &&
+			bot.HP < bot.MaxHP &&
+			(bot.LastCombatTime.IsZero() || now.Sub(bot.LastCombatTime).Seconds() >= 30.0) {
+			bot.RegenTickAccum += dt
+			if bot.RegenTickAccum >= 1.0 {
+				bot.RegenTickAccum -= 1.0
+				bot.HP = int(math.Min(float64(bot.MaxHP), float64(bot.HP+5)))
 			}
+		} else {
+			bot.RegenTickAccum = 0
 		}
 	}
 
-	return events
+	return events, chats, foodsChanged
 }
 
 func calcScaledMaxHP(base int, growth float64) int {
@@ -260,32 +322,36 @@ func calcScaledMaxHP(base int, growth float64) int {
 	return int(math.Round(float64(base) * (0.45 + 0.65*growth)))
 }
 
-func findNearestHuman(bot *models.Player, players map[string]*models.Player) (*models.Player, float64) {
+func findNearestHuman(bot *models.Player, humans []*models.Player) (*models.Player, float64) {
 	var closest *models.Player
-	minDist := math.MaxFloat64
-	for _, p := range players {
-		if p.IsAI || p.ID == bot.ID {
-			continue
-		}
-		d := math.Hypot(p.X-bot.X, p.Z-bot.Z)
-		if d < minDist {
-			minDist = d
+	minDistSq := math.MaxFloat64
+	for _, p := range humans {
+		dx := p.X - bot.X
+		dz := p.Z - bot.Z
+		dSq := dx*dx + dz*dz
+		if dSq < minDistSq {
+			minDistSq = dSq
 			closest = p
 		}
 	}
-	return closest, minDist
+	if closest == nil {
+		return nil, math.MaxFloat64
+	}
+	return closest, math.Sqrt(minDistSq)
 }
 
 func findNearestFood(bot *models.Player, foods map[string]*models.WorldFood, foodType string) *models.WorldFood {
 	var closest *models.WorldFood
-	minDist := math.MaxFloat64
+	minDistSq := math.MaxFloat64
 	for _, f := range foods {
 		if f.Type != foodType || f.Amount <= 0 {
 			continue
 		}
-		d := math.Hypot(f.X-bot.X, f.Z-bot.Z)
-		if d < minDist {
-			minDist = d
+		dx := f.X - bot.X
+		dz := f.Z - bot.Z
+		dSq := dx*dx + dz*dz
+		if dSq < minDistSq {
+			minDistSq = dSq
 			closest = f
 		}
 	}
@@ -300,7 +366,7 @@ func pickRandomWaypoint(bot *models.Player) {
 		wz := bot.Z + math.Sin(angle)*step
 		if math.Abs(wx) < 350.0 && math.Abs(wz) < 350.0 &&
 			!world.IsNearWater(wx, wz) &&
-			world.GetTerrainHeight(wx, wz) < 22.0 {
+			world.GetEntityGroundHeight(wx, wz) < 22.0 {
 			bot.TargetX = wx
 			bot.TargetZ = wz
 			bot.StateTimer = 10.0 + rand.Float64()*10.0
@@ -316,20 +382,15 @@ func steerAndMove(bot *models.Player, targetX, targetZ, speed, turnRate, dt floa
 	dx := targetX - bot.X
 	dz := targetZ - bot.Z
 	desiredYaw := math.Atan2(dx, dz)
-
 	bot.Rotation = lerpAngle(bot.Rotation, desiredYaw, math.Min(1.0, dt*turnRate))
 	nextX := bot.X + math.Sin(bot.Rotation)*speed*dt
 	nextZ := bot.Z + math.Cos(bot.Rotation)*speed*dt
-
-	// Tránh leo vách núi quá cao
-	if world.GetTerrainHeight(nextX, nextZ) > 26.0 {
+	if world.GetEntityGroundHeight(nextX, nextZ) > 26.0 {
 		pickRandomWaypoint(bot)
 		return
 	}
-
 	bot.X, bot.Z = world.ResolveObstacleCollision(nextX, nextZ, 2.0)
-	bot.Y = math.Max(-0.35, world.GetTerrainHeight(bot.X, bot.Z))
-
+	bot.Y = world.GetEntityGroundHeight(bot.X, bot.Z)
 	if math.Abs(bot.X) >= 380.0 || math.Abs(bot.Z) >= 380.0 {
 		pickRandomWaypoint(bot)
 	}

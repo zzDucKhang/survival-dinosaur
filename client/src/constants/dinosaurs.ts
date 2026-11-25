@@ -23,35 +23,7 @@ export interface DinoSpec {
   backSpeed: number;
 }
 
-export interface WorldRock {
-  pos: [number, number, number];
-  scale: [number, number, number];
-  rot: number;
-  radius: number;
-}
 
-// Deterministic rock coordinates matching server/internal/world/obstacles.go 100%
-export const WORLD_ROCKS: WorldRock[] = (() => {
-  const list: WorldRock[] = [];
-  for (let i = 0; i < 45; i++) {
-    const angle = (i / 45) * Math.PI * 2 + (i % 7);
-    const dist = 22 + ((i * 4.7) % 105);
-    const x = Math.cos(angle) * dist;
-    const z = Math.sin(angle) * dist;
-    if (Math.hypot(x - 25, z - -25) < 19) continue;
-
-    const sy = 1.3 + (i % 5) * 0.95;
-    const sx = 1.2 + (i % 3) * 1.3;
-    const sz = 1.2 + (i % 4) * 1.2;
-    list.push({
-      pos: [x, sy * 0.35, z],
-      scale: [sx, sy, sz],
-      rot: i * 0.9,
-      radius: Math.max(sx, sz) * 1.15,
-    });
-  }
-  return list;
-})();
 
 const discoveredGlbFiles = import.meta.glob('/public/models/*.glb');
 const discoveredJsonConfigs = import.meta.glob('/public/models/*.json', {
@@ -399,6 +371,12 @@ export function getDinoAction(
       return findMatch(['roar', 'screech', 'bellow', 'call', 'scream']) || actions[names[0]] || null;
     case 'tail':
       return findMatch(['tail', 'whip', 'swipe', 'stomp', 'attack2']) || actions[names[0]] || null;
+    case 'rest':
+      return (
+        findMatch(['sleep', 'rest', 'sit', 'lie', 'crouch', 'idle', 'stand', 'breathe']) ||
+        actions[names[0]] ||
+        null
+      );
     default:
       return actions[names[0]] || null;
   }

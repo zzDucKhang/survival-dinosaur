@@ -6,8 +6,10 @@ import (
 	"net"
 	"net/http"
 
-	"dino-server/internal/engine"
+	"dino-server/internal/controller"
 	"dino-server/internal/network"
+	"dino-server/internal/repository"
+	"dino-server/internal/service"
 )
 
 func getLocalLANIPs() []string {
@@ -27,21 +29,26 @@ func getLocalLANIPs() []string {
 }
 
 func main() {
-	hub := network.NewHub()
-	go hub.Run()
+	// Dependency Injection: Repository -> Service -> Controller -> Hub
+	worldRepo := repository.NewWorldRepository()
+	gameService := service.NewGameService(worldRepo)
+	wsController := controller.NewWSController(gameService)
+	hub := network.NewHub(wsController)
 
-	engine.StartGameLoop(hub)
+	go hub.Run()
+	gameService.StartGameLoop(hub)
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		network.ServeWs(hub, w, r)
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		players, foods, worldTime := engine.GetSnapshot()
+		players, foods, worldTime := gameService.GetFullSnapshot()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(
 			w,
-			`{"status":"ok","name":"Dino Isle Server","playersCount":%d,"foodsCount":%d,"worldTime":%.2f}`,
+			`{"status":"ok","name":"Dino Isle Server","onlineClients":%d,"entitiesCount":%d,"foodsCount":%d,"worldTime":%.2f}`,
+			hub.ClientCount(),
 			len(players),
 			len(foods),
 			worldTime,
@@ -53,7 +60,6 @@ func main() {
 	for _, ip := range getLocalLANIPs() {
 		log.Printf("🌐 [LAN MULTIPLAYER] Máy khác cùng Wi-Fi mở link: http://%s:5173\n", ip)
 	}
-
 	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatalf("Fatal server error: %v", err)
 	}

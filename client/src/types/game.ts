@@ -1,6 +1,6 @@
 export type DinoModelType = string;
 export type DietType = 'carnivore' | 'herbivore';
-export type AnimState = 'idle' | 'walk' | 'run' | 'bite' | 'roar' | 'tail';
+export type AnimState = 'idle' | 'walk' | 'run' | 'bite' | 'roar' | 'tail' | 'rest';
 export type GraphicsQuality = 'low' | 'medium' | 'high';
 
 export interface PlayerData {
@@ -21,6 +21,12 @@ export interface PlayerData {
   bleed?: number;
   kills?: number;
   isResting?: boolean;
+  restUnlockLeft?: number;
+  combatTimerLeft?: number;
+  regenRate?: number;
+  isCrouching?: boolean;
+  respawnSeq?: number;
+  lastKilledBy?: string;
   isAi?: boolean;
   aiState?: string;
 }

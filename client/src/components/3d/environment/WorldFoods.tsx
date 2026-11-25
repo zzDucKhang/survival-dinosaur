@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { foodsMutable, useGameStore } from '../../../store/useGameStore';
-import { getTerrainHeight } from '../../../constants/terrain';
+import { getMeshTerrainHeight } from '../../../constants/terrain';
 
 const FoodNode: React.FC<{ id: string }> = React.memo(({ id }) => {
   const groupRef = useRef<THREE.Group>(null);
@@ -17,7 +17,7 @@ const FoodNode: React.FC<{ id: string }> = React.memo(({ id }) => {
   });
 
   if (!initial) return null;
-  const groundY = Math.max(-0.2, getTerrainHeight(initial.x, initial.z));
+  const groundY = getMeshTerrainHeight(initial.x, initial.z);
 
   return (
     <group ref={groupRef} position={[initial.x, groundY, initial.z]}>

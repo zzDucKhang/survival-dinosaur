@@ -17,6 +17,7 @@ const (
 	HighlandLakeRadius = 32.0
 
 	IslandLimit = 450.0
+	WaterLevel  = -0.35
 )
 
 type RockObstacle struct {
@@ -37,39 +38,35 @@ func clamp(v, minV, maxV float64) float64 {
 	return v
 }
 
-// GetTerrainHeight trả về độ cao Y tại (x, z) — khớp 100% với client/src/constants/terrain.ts
+// GetTerrainHeight khớp 100% với client/src/constants/terrain.ts
 func GetTerrainHeight(x, z float64) float64 {
 	distOrigin := math.Hypot(x, z)
 
-	// Đồi núi & thung lũng tự nhiên (O(1), không tốn RAM)
 	hills := math.Sin(x*0.011)*math.Cos(z*0.011)*11.0 +
 		math.Sin(x*0.024+z*0.017)*4.5 +
 		math.Cos(x*0.0055-z*0.0065)*9.0
 
-	// 2 đỉnh núi lớn phía Đông Bắc & Tây Nam
 	dPeak1 := math.Hypot(x-210.0, z-170.0)
 	if dPeak1 < 120.0 {
 		t := 1.0 - dPeak1/120.0
 		hills += t * t * 34.0
 	}
+
 	dPeak2 := math.Hypot(x+220.0, z+160.0)
 	if dPeak2 < 130.0 {
 		t := 1.0 - dPeak2/130.0
 		hills += t * t * 38.0
 	}
 
-	// Thung lũng sâu phía Tây Bắc
 	dValley := math.Hypot(x+140.0, z-20.0)
 	if dValley < 110.0 {
 		t := 1.0 - dValley/110.0
 		hills -= t * t * 8.0
 	}
 
-	// Giữ vùng trung tâm (0,0) bằng phẳng làm bãi cỏ xuất phát
 	spawnWeight := clamp((distOrigin-32.0)/55.0, 0.0, 1.0)
 	h := 0.8 + hills*spawnWeight
 
-	// Lòng chảo Hồ Oasis (60, -60)
 	dOasis := math.Hypot(x-OasisX, z-OasisZ)
 	if dOasis < OasisRadius+18.0 {
 		t := clamp((dOasis-OasisRadius)/18.0, 0.0, 1.0)
@@ -77,7 +74,6 @@ func GetTerrainHeight(x, z float64) float64 {
 		h = -2.2*(1.0-t) + h*t
 	}
 
-	// Lòng chảo Hồ Cao Nguyên (-160, 140)
 	dLake2 := math.Hypot(x-HighlandLakeX, z-HighlandLakeZ)
 	if dLake2 < HighlandLakeRadius+22.0 {
 		t := clamp((dLake2-HighlandLakeRadius)/22.0, 0.0, 1.0)
@@ -85,7 +81,6 @@ func GetTerrainHeight(x, z float64) float64 {
 		h = -2.2*(1.0-t) + h*t
 	}
 
-	// Vòng núi bao quanh chân trời (dist > 370)
 	if distOrigin > 370.0 {
 		angle := math.Atan2(z, x)
 		edgeT := (distOrigin - 370.0) / 140.0
@@ -96,23 +91,45 @@ func GetTerrainHeight(x, z float64) float64 {
 	return h
 }
 
+func IsInsideLake(x, z float64) bool {
+	dx1, dz1 := x-OasisX, z-OasisZ
+	r1 := OasisRadius + 4.0
+	if dx1*dx1+dz1*dz1 <= r1*r1 {
+		return true
+	}
+	dx2, dz2 := x-HighlandLakeX, z-HighlandLakeZ
+	r2 := HighlandLakeRadius + 5.0
+	return dx2*dx2+dz2*dz2 <= r2*r2
+}
+
 func IsNearWater(x, z float64) bool {
-	if math.Hypot(x-OasisX, z-OasisZ) <= OasisRadius+6.0 {
+	dx1, dz1 := x-OasisX, z-OasisZ
+	r1 := OasisRadius + 6.0
+	if dx1*dx1+dz1*dz1 <= r1*r1 {
 		return true
 	}
-	if math.Hypot(x-HighlandLakeX, z-HighlandLakeZ) <= HighlandLakeRadius+6.0 {
-		return true
+	dx2, dz2 := x-HighlandLakeX, z-HighlandLakeZ
+	r2 := HighlandLakeRadius + 6.0
+	return dx2*dx2+dz2*dz2 <= r2*r2
+}
+
+// GetEntityGroundHeight trả về đúng độ cao chân chạm mặt đất (kể cả vùng trũng âm),
+// chỉ giới hạn độ sâu lội nước khi ở trong 2 hồ.
+func GetEntityGroundHeight(x, z float64) float64 {
+	h := GetTerrainHeight(x, z)
+	if IsInsideLake(x, z) {
+		return math.Max(WaterLevel-0.85, h)
 	}
-	return false
+	return h
 }
 
 func init() {
+	Rocks = make([]RockObstacle, 0, 140)
 	for i := 0; i < 140; i++ {
 		angle := float64(i)*2.3999632 + float64(i%5)*0.11
 		dist := 30.0 + math.Mod(float64(i)*19.37, 360.0)
 		x := math.Cos(angle) * dist
 		z := math.Sin(angle) * dist
-
 		if math.Hypot(x-OasisX, z-OasisZ) < OasisRadius+10.0 {
 			continue
 		}
@@ -122,7 +139,6 @@ func init() {
 		if GetTerrainHeight(x, z) > 24.0 {
 			continue
 		}
-
 		sx := 1.6 + float64(i%4)*1.35
 		sz := 1.6 + float64(i%3)*1.45
 		radius := math.Max(sx, sz) * 1.15
@@ -130,16 +146,19 @@ func init() {
 	}
 }
 
+// ResolveObstacleCollision tối ưu dùng bình phương khoảng cách để bỏ sqrt ở phần lớn tảng đá
 func ResolveObstacleCollision(x, z, entityRadius float64) (float64, float64) {
-	for _, rock := range Rocks {
+	for i := range Rocks {
+		rock := &Rocks[i]
 		dx := x - rock.X
 		dz := z - rock.Z
-		dist := math.Hypot(dx, dz)
 		minDist := rock.Radius + entityRadius
-		if dist < minDist {
-			if dist < 0.001 {
+		distSq := dx*dx + dz*dz
+		if distSq < minDist*minDist {
+			if distSq < 0.000001 {
 				x += minDist
 			} else {
+				dist := math.Sqrt(distSq)
 				push := minDist - dist
 				x += (dx / dist) * push
 				z += (dz / dist) * push
@@ -152,7 +171,7 @@ func ResolveObstacleCollision(x, z, entityRadius float64) (float64, float64) {
 }
 
 func CreateInitialPlants() map[string]*models.WorldFood {
-	foods := make(map[string]*models.WorldFood)
+	foods := make(map[string]*models.WorldFood, 24)
 	for i := 0; i < 24; i++ {
 		angle := float64(i) * 2.3999632
 		dist := 35.0 + math.Mod(float64(i)*31.7, 310.0)
@@ -166,8 +185,8 @@ func CreateInitialPlants() map[string]*models.WorldFood {
 		foods[id] = &models.WorldFood{
 			ID:        id,
 			Type:      "plant",
-			X:         x,
-			Z:         z,
+			X:         math.Round(x*100) / 100,
+			Z:         math.Round(z*100) / 100,
 			Amount:    100,
 			MaxAmount: 100,
 			ExpiresAt: 0,

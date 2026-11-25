@@ -11,28 +11,38 @@ const (
 )
 
 type Player struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	Model          string    `json:"model"`
-	Diet           string    `json:"diet"`
-	X              float64   `json:"x"`
-	Y              float64   `json:"y"`
-	Z              float64   `json:"z"`
-	Rotation       float64   `json:"rot"`
-	AnimState      string    `json:"anim"`
-	HP             int       `json:"hp"`
-	MaxHP          int       `json:"maxHp"`
-	BaseMaxHP      int       `json:"-"`
-	Hunger         float64   `json:"hunger"`
-	Thirst         float64   `json:"thirst"`
-	Growth         float64   `json:"growth"` // 0.35 (Con non) -> 1.0 (Trưởng thành) -> 1.25 (Apex)
-	BleedTimer     float64   `json:"bleed"`
-	Kills          int       `json:"kills"`
-	IsResting      bool      `json:"isResting"`
-	IsAI           bool      `json:"isAi"`
-	AIState        string    `json:"aiState,omitempty"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Model           string  `json:"model"`
+	Diet            string  `json:"diet"`
+	X               float64 `json:"x"`
+	Y               float64 `json:"y"`
+	Z               float64 `json:"z"`
+	Rotation        float64 `json:"rot"`
+	AnimState       string  `json:"anim"`
+	HP              int     `json:"hp"`
+	MaxHP           int     `json:"maxHp"`
+	BaseMaxHP       int     `json:"-"`
+	Hunger          float64 `json:"hunger"`
+	Thirst          float64 `json:"thirst"`
+	Growth          float64 `json:"growth"`
+	BleedTimer      float64 `json:"bleed"`
+	Kills           int     `json:"kills"`
+	IsResting       bool    `json:"isResting"`
+	RestUnlockLeft  float64 `json:"restUnlockLeft"`
+	CombatTimerLeft float64 `json:"combatTimerLeft"`
+	RegenRate       int     `json:"regenRate"`
+	IsCrouching     bool    `json:"isCrouching"`
+	RespawnSeq      int     `json:"respawnSeq"`
+	LastKilledBy    string  `json:"lastKilledBy,omitempty"`
+	IsAI            bool    `json:"isAi"`
+	AIState         string  `json:"aiState,omitempty"`
+
 	LastAttackTime time.Time `json:"-"`
 	LastEatTime    time.Time `json:"-"`
+	LastCombatTime time.Time `json:"-"`
+	RestStartedAt  time.Time `json:"-"`
+	LastRoarTime   time.Time `json:"-"`
 
 	// Internal AI navigation & timers
 	TargetX         float64 `json:"-"`
@@ -63,7 +73,7 @@ type CombatEvent struct {
 	Damage     int     `json:"damage"`
 	TargetHP   int     `json:"targetHp"`
 	IsKill     bool    `json:"isKill"`
-	AttackType string  `json:"attackType"`
+	AttackType string  `json:"attackType"` // "bite" | "tail" | "bleed" | "heal" | "roar"
 	X          float64 `json:"x"`
 	Y          float64 `json:"y"`
 	Z          float64 `json:"z"`
@@ -103,6 +113,14 @@ type ChatPayload struct {
 	Text string `json:"text"`
 }
 
+type CrouchPayload struct {
+	Crouching bool `json:"crouching"`
+}
+
+type RoarPayload struct {
+	CallType int `json:"callType"`
+}
+
 type OutboundMessage struct {
 	Type      string                `json:"type"`
 	ID        string                `json:"id,omitempty"`
@@ -110,6 +128,6 @@ type OutboundMessage struct {
 	Foods     map[string]*WorldFood `json:"foods,omitempty"`
 	Events    []CombatEvent         `json:"events,omitempty"`
 	Chats     []ChatMessage         `json:"chats,omitempty"`
-	WorldTime float64               `json:"worldTime"` // 0.0 -> 1.0
+	WorldTime float64               `json:"worldTime"`
 	Message   string                `json:"message,omitempty"`
 }

@@ -8,17 +8,22 @@ interface ActivePopup extends CombatEvent {
   createdAt: number;
 }
 
+const ROAR_LABELS: Record<number, { label: string; color: string }> = {
+  1: { label: '📢 GẦM LÃNH THỔ!', color: '#fde047' },
+  2: { label: '💚 GỌI BẦY THÂN THIỆN', color: '#4ade80' },
+  3: { label: '💢 GẦM ĐE DỌA!', color: '#fb923c' },
+  4: { label: '🆘 KÊU CỨU!', color: '#f43f5e' },
+};
+
 export const CombatEffects: React.FC = () => {
   const [popups, setPopups] = useState<ActivePopup[]>([]);
   const lastFrameUpdateRef = useRef(0);
 
   useFrame(() => {
     const now = performance.now();
-    while (combatEventsQueue.length > 0 && now - combatEventsQueue[0].createdAt > 1100) {
+    while (combatEventsQueue.length > 0 && now - combatEventsQueue[0].createdAt > 1250) {
       combatEventsQueue.shift();
     }
-
-    // Chỉ re-render ở ~30Hz khi đang có popup sát thương; khi không chiến đấu = 0 re-render
     if (combatEventsQueue.length > 0) {
       if (now - lastFrameUpdateRef.current >= 33) {
         lastFrameUpdateRef.current = now;
@@ -34,8 +39,25 @@ export const CombatEffects: React.FC = () => {
   return (
     <group>
       {popups.map((evt) => {
-        const age = Math.min(1, (now - evt.createdAt) / 1100);
-        const yOffset = evt.y + age * 2.2;
+        const age = Math.min(1, (now - evt.createdAt) / 1250);
+        const yOffset = evt.y + age * 2.4;
+        const isHeal = evt.attackType === 'heal';
+        const isRoar = evt.attackType === 'roar';
+        const roarMeta = ROAR_LABELS[evt.damage] || ROAR_LABELS[1];
+
+        let text = `🩸 -${evt.damage} HP`;
+        let color = '#ef4444';
+        if (evt.isKill) {
+          text = `💀 HẠ GỤC! -${evt.damage}`;
+          color = '#fde047';
+        } else if (isHeal) {
+          text = `💚 +${evt.damage} HP`;
+          color = evt.damage >= 15 ? '#38bdf8' : '#4ade80';
+        } else if (isRoar) {
+          text = roarMeta.label;
+          color = roarMeta.color;
+        }
+
         return (
           <group key={evt.id} position={[evt.x, yOffset, evt.z]}>
             <Html center distanceFactor={25}>
@@ -44,16 +66,16 @@ export const CombatEffects: React.FC = () => {
                   pointerEvents: 'none',
                   userSelect: 'none',
                   opacity: 1 - age * 0.85,
-                  transform: `scale(${1 + (1 - age) * 0.25})`,
+                  transform: `scale(${1 + (1 - age) * 0.22})`,
                   fontFamily: 'system-ui, sans-serif',
                   fontWeight: '900',
-                  fontSize: evt.isKill ? '18px' : '15px',
-                  color: evt.isKill ? '#fde047' : '#ef4444',
+                  fontSize: evt.isKill || isRoar ? '17px' : '15px',
+                  color,
                   textShadow: '0 2px 8px rgba(0,0,0,0.95)',
                   whiteSpace: 'nowrap',
                 }}
               >
-                {evt.isKill ? `💀 HẠ GỤC! -${evt.damage}` : `🩸 -${evt.damage} HP`}
+                {text}
               </div>
             </Html>
           </group>

@@ -4,7 +4,6 @@ import { useGameStore } from '../../../store/useGameStore';
 export const ControlsHelp: React.FC = () => {
   const showHelp = useGameStore((s) => s.showHelp);
   const toggleHelp = useGameStore((s) => s.toggleHelp);
-
   if (!showHelp) return null;
 
   return (
@@ -20,7 +19,7 @@ export const ControlsHelp: React.FC = () => {
           display: 'flex',
           flexDirection: 'column',
           gap: '5px',
-          width: '295px',
+          width: '330px',
           boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
         }}
       >
@@ -34,19 +33,22 @@ export const ControlsHelp: React.FC = () => {
             marginBottom: '2px',
           }}
         >
-          <span>🎮 PHÍM ĐIỀU KHIỂN</span>
+          <span>🎮 PHÍM ĐIỀU KHIỂN (THE ISLE)</span>
           <span onClick={toggleHelp} style={{ cursor: 'pointer', color: '#94a3b8' }}>
             ✕
           </span>
         </div>
         <div>• <b>W / A / S / D (↑ ← ↓ →):</b> Di chuyển &amp; Rẽ</div>
-        <div>• <b>Giữ Shift:</b> Chạy nước rút (Sprint)</div>
+        <div>• <b>Giữ Shift / Phím C:</b> Chạy nhanh / Rón rén ẩn nấp</div>
         <div>• <b>Chuột Phải + Kéo / Lăn:</b> Xoay 360° ngắm trời &amp; Zoom</div>
         <div>• <b>Chuột Trái / Space / F:</b> Cắn gây mất máu</div>
-        <div>• <b>Phím E / R:</b> Quất đuôi (E) / Gầm vang (R)</div>
+        <div>• <b>Phím E:</b> Quất đuôi diện rộng</div>
+        <div>• <b>Phím 1 / 2 / 3 / 4 / R:</b> 4 kiểu gọi (Lãnh thổ / Thân thiện / Đe dọa / Kêu cứu)</div>
         <div>• <b>Phím G:</b> Uống nước tại hồ / Ăn thịt &amp; quả (+Lớn)</div>
-        <div>• <b>Phím H:</b> Nghỉ ngơi hồi Máu/Thể lực nhanh</div>
-        <div>• <b>Phím Q / Enter:</b> Đánh hơi / Chat phòng</div>
+        <div>• <b>Phím H / Nút HUD:</b> Nghỉ ngơi (+20 HP/s, khóa hành động, mở nút đứng sau 3s)</div>
+        <div>• <b>Phím M / Bấm Radar:</b> Mở Bản đồ toàn đảo &amp; ghim dẫn đường 📍</div>
+        <div>• <b>Phím N / Q / Tab:</b> Nhìn đêm (NV) / Đánh hơi / Bảng xếp hạng</div>
+        <div>• <b>Ngoài giao chiến 30s:</b> Tự động hồi +5 HP/giây</div>
       </div>
     </div>
   );

@@ -16,6 +16,8 @@ import {
 
 export const RadarMinimap: React.FC = () => {
   const myId = useGameStore((s) => s.myId);
+  const setMapOpen = useGameStore((s) => s.setMapOpen);
+  const mapWaypoint = useGameStore((s) => s.mapWaypoint);
   const radarCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -33,15 +35,15 @@ export const RadarMinimap: React.FC = () => {
             const h = canvas.height;
             const cx = w / 2;
             const cy = h / 2;
-            const mapScale = (w * 0.48) / 240;
+            const radarRadius = w * 0.48;
+            const mapScale = radarRadius / 240;
             const meX = localTransformMutable.x;
             const meZ = localTransformMutable.z;
 
             ctx.clearRect(0, 0, w, h);
-
             ctx.save();
             ctx.beginPath();
-            ctx.arc(cx, cy, w * 0.48, 0, Math.PI * 2);
+            ctx.arc(cx, cy, radarRadius, 0, Math.PI * 2);
             ctx.clip();
 
             ctx.strokeStyle = 'rgba(52, 211, 153, 0.22)';
@@ -63,7 +65,7 @@ export const RadarMinimap: React.FC = () => {
 
             for (const id of Object.keys(foodsMutable)) {
               const f = foodsMutable[id];
-              if (f.amount <= 0) continue;
+              if (!f || f.amount <= 0) continue;
               const fx = cx + (f.x - meX) * mapScale;
               const fz = cy + (f.z - meZ) * mapScale;
               ctx.fillStyle = f.type === 'meat' ? '#f43f5e' : '#86efac';
@@ -73,6 +75,7 @@ export const RadarMinimap: React.FC = () => {
             for (const id of Object.keys(playersMutable)) {
               if (id === myId) continue;
               const p = playersMutable[id];
+              if (!p) continue;
               const px = cx + (p.x - meX) * mapScale;
               const pz = cy + (p.z - meZ) * mapScale;
               const isHunting = p.aiState === 'CHASE' || p.aiState === 'ATTACK';
@@ -88,6 +91,30 @@ export const RadarMinimap: React.FC = () => {
               ctx.beginPath();
               ctx.arc(px, pz, dotSize, 0, Math.PI * 2);
               ctx.fill();
+            }
+
+            const wp = useGameStore.getState().mapWaypoint;
+            if (wp) {
+              let dx = (wp.x - meX) * mapScale;
+              let dz = (wp.z - meZ) * mapScale;
+              const d = Math.hypot(dx, dz);
+              if (d > radarRadius - 6) {
+                dx = (dx / d) * (radarRadius - 6);
+                dz = (dz / d) * (radarRadius - 6);
+              }
+              const wx = cx + dx;
+              const wz = cy + dz;
+              ctx.fillStyle = '#facc15';
+              ctx.strokeStyle = '#0f172a';
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.moveTo(wx, wz - 5);
+              ctx.lineTo(wx + 5, wz);
+              ctx.lineTo(wx, wz + 5);
+              ctx.lineTo(wx - 5, wz);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
             }
 
             ctx.fillStyle = '#fde047';
@@ -118,31 +145,51 @@ export const RadarMinimap: React.FC = () => {
 
   return (
     <div
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        setMapOpen(true);
+      }}
+      title="Bấm để mở Bản Đồ Toàn Đảo (Phím M)"
       style={{
         position: 'absolute',
         bottom: '22px',
         right: '20px',
         background: 'rgba(15, 23, 42, 0.88)',
-        border: '1px solid rgba(52, 211, 153, 0.25)',
+        border: mapWaypoint
+          ? '1px solid rgba(250, 204, 21, 0.55)'
+          : '1px solid rgba(52, 211, 153, 0.35)',
         borderRadius: '12px',
         padding: '10px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: '4px',
+        pointerEvents: 'auto',
+        cursor: 'pointer',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
       }}
     >
-      <div style={{ fontSize: '10px', fontWeight: '700', color: '#34d399', letterSpacing: '1px' }}>
-        🧭 RADAR ĐỊA HÌNH 10X
+      <div style={{ fontSize: '10px', fontWeight: '800', color: '#34d399', letterSpacing: '0.8px' }}>
+        🗺️ BẤM MỞ BẢN ĐỒ [M]
       </div>
-      <canvas
-        ref={radarCanvasRef}
-        width={136}
-        height={136}
-        style={{ borderRadius: '50%', background: '#090d16' }}
-      />
-      <div style={{ fontSize: '9px', color: '#94a3b8' }}>
-        🟡 Bạn • 🟢 Ăn cỏ • 🟣 Ăn thịt • 🔵 Hồ
+      <div style={{ width: '136px', height: '136px', flexShrink: 0 }}>
+        <canvas
+          ref={radarCanvasRef}
+          width={136}
+          height={136}
+          style={{
+            width: '136px',
+            height: '136px',
+            borderRadius: '50%',
+            background: '#090d16',
+          }}
+        />
+      </div>
+      <div style={{ fontSize: '9px', color: mapWaypoint ? '#fde047' : '#94a3b8' }}>
+        {mapWaypoint
+          ? `📍 Đang ghim (${mapWaypoint.x}, ${mapWaypoint.z})`
+          : '🟡 Bạn • 🟢 Ăn cỏ • 🟣 Ăn thịt • 🔵 Hồ'}
       </div>
     </div>
   );

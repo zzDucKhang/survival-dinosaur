@@ -1,25 +1,22 @@
-package engine
+package service
 
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
 	"time"
 
 	"dino-server/internal/models"
-	"dino-server/internal/world"
 )
 
-func ProcessPlayerAttack(attackerID string, attackType string) {
-	PlayersMutex.Lock()
-	defer PlayersMutex.Unlock()
+func (s *GameService) ProcessPlayerAttack(attackerID string, attackType string) {
+	s.repo.Lock()
+	defer s.repo.Unlock()
 
-	attacker, exists := Players[attackerID]
-	if !exists {
+	attacker, exists := s.repo.Players[attackerID]
+	if !exists || attacker.IsResting {
 		return
 	}
-	attacker.IsResting = false
 
 	now := time.Now()
 	cooldown := 750 * time.Millisecond
@@ -63,41 +60,50 @@ func ProcessPlayerAttack(attackerID string, attackType string) {
 	}
 
 	growthScale := 0.55 + 0.55*math.Max(0.35, attacker.Growth)
-	finalDamage := int(math.Round(float64(baseDamage) * growthScale))
+	baseFinalDamage := float64(baseDamage) * growthScale
+	attackRangeSq := attackRange * attackRange
 
 	forwardX := math.Sin(attacker.Rotation)
 	forwardZ := math.Cos(attacker.Rotation)
 
-	for id, target := range Players {
+	for id, target := range s.repo.Players {
 		if id == attackerID {
 			continue
 		}
-
 		dx := target.X - attacker.X
 		dz := target.Z - attacker.Z
-		dist := math.Hypot(dx, dz)
-
-		if dist > attackRange || dist < 0.001 {
+		distSq := dx*dx + dz*dz
+		if distSq > attackRangeSq || distSq < 0.000001 {
 			continue
 		}
 
 		if attackType != "tail" {
-			dirX := dx / dist
-			dirZ := dz / dist
-			dot := forwardX*dirX + forwardZ*dirZ
+			dist := math.Sqrt(distSq)
+			dot := forwardX*(dx/dist) + forwardZ*(dz/dist)
 			if dot < 0.25 {
 				continue
 			}
 		}
 
+		// Ghi nhận trạng thái giao chiến (reset đồng hồ 30s)
+		attacker.LastCombatTime = now
+		attacker.CombatTimerLeft = OutOfCombatSeconds
+		target.LastCombatTime = now
+		target.CombatTimerLeft = OutOfCombatSeconds
+
+		// Phục kích khi mục tiêu đang nghỉ ngơi gây 1.4x sát thương
+		dmgFloat := baseFinalDamage
+		if target.IsResting {
+			dmgFloat *= 1.4
+		}
+		finalDamage := int(math.Round(dmgFloat))
+
 		hitX, hitY, hitZ := target.X, target.Y, target.Z
 		target.HP -= finalDamage
-		target.IsResting = false
 
 		if bleedSec > 0 && attackType == "bite" {
 			target.BleedTimer = math.Max(target.BleedTimer, bleedSec)
 		}
-
 		if target.IsAI && target.Diet == models.DietHerbivore {
 			target.ProvokedByID = attacker.ID
 			target.ProvokedTimer = 12.0
@@ -106,54 +112,10 @@ func ProcessPlayerAttack(attackerID string, attackType string) {
 		isKill := false
 		if target.HP <= 0 {
 			isKill = true
-			attacker.Kills++
-
-			carcassID := fmt.Sprintf("meat-%d-%s", now.UnixNano(), target.ID)
-			Foods[carcassID] = &models.WorldFood{
-				ID:        carcassID,
-				Type:      "meat",
-				X:         hitX,
-				Z:         hitZ,
-				Amount:    100,
-				MaxAmount: 100,
-				ExpiresAt: now.Add(120 * time.Second).Unix(),
-			}
-
-			PendingChats = append(PendingChats, models.ChatMessage{
-				ID:        fmt.Sprintf("kill-%d-%s", now.UnixNano(), target.ID),
-				Sender:    "ISLE",
-				Text:      fmt.Sprintf("⚔️ %s đã hạ gục %s!", attacker.Name, target.Name),
-				IsSystem:  true,
-				Timestamp: now.UnixMilli(),
-			})
-
-			if target.IsAI {
-				target.HP = target.MaxHP
-			} else {
-				target.Growth = 0.45
-				target.MaxHP = ScaleMaxHP(target.BaseMaxHP, target.Growth)
-				target.HP = target.MaxHP
-				target.Hunger = 85
-				target.Thirst = 85
-			}
-			target.BleedTimer = 0
-			target.ProvokedByID = ""
-
-			angle := rand.Float64() * 2 * math.Pi
-			spawnRadius := 55.0 + rand.Float64()*140.0
-			rx, rz := world.ResolveObstacleCollision(
-				math.Cos(angle)*spawnRadius,
-				math.Sin(angle)*spawnRadius,
-				2.0,
-			)
-			target.X = rx
-			target.Z = rz
-			target.Y = math.Max(-0.2, world.GetTerrainHeight(rx, rz))
-			target.TargetX = 0
-			target.TargetZ = 0
+			s.handlePlayerDeathLocked(target, attacker, attacker.Name, now)
 		}
 
-		PendingCombatEvents = append(PendingCombatEvents, models.CombatEvent{
+		s.repo.PendingCombatEvents = append(s.repo.PendingCombatEvents, models.CombatEvent{
 			ID:         fmt.Sprintf("hit-%d-%s", now.UnixNano(), target.ID),
 			AttackerID: attacker.ID,
 			TargetID:   target.ID,

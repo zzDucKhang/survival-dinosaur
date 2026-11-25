@@ -14,6 +14,10 @@ export const RobloxTopLeftBar: React.FC = () => {
   const showHelp = useGameStore((s) => s.showHelp);
   const toggleHelp = useGameStore((s) => s.toggleHelp);
   const rotateCurrentModel90 = useGameStore((s) => s.rotateCurrentModel90);
+  const nightVision = useGameStore((s) => s.nightVision);
+  const toggleNightVision = useGameStore((s) => s.toggleNightVision);
+  const isMapOpen = useGameStore((s) => s.isMapOpen);
+  const toggleMapOpen = useGameStore((s) => s.toggleMapOpen);
 
   const [fps, setFps] = useState(60);
   const [clockLabel, setClockLabel] = useState('☀️ 08:30');
@@ -22,7 +26,6 @@ export const RobloxTopLeftBar: React.FC = () => {
     let frameCount = 0;
     let lastTime = performance.now();
     let animId: number;
-
     const calcFps = () => {
       frameCount++;
       const now = performance.now();
@@ -31,7 +34,6 @@ export const RobloxTopLeftBar: React.FC = () => {
         setFps(Math.round((frameCount * 1000) / elapsed));
         frameCount = 0;
         lastTime = now;
-
         const totalMins = Math.floor(worldTimeMutable.value * 24 * 60);
         const hh = Math.floor(totalMins / 60) % 24;
         const mm = totalMins % 60;
@@ -40,7 +42,6 @@ export const RobloxTopLeftBar: React.FC = () => {
       }
       animId = requestAnimationFrame(calcFps);
     };
-
     animId = requestAnimationFrame(calcFps);
     return () => cancelAnimationFrame(animId);
   }, []);
@@ -64,6 +65,12 @@ export const RobloxTopLeftBar: React.FC = () => {
     transition: 'transform 0.1s ease, background 0.15s ease',
   });
 
+  const handleBtnClick = (fn: () => void) => (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.currentTarget.blur();
+    fn();
+  };
+
   return (
     <div
       style={{
@@ -76,40 +83,49 @@ export const RobloxTopLeftBar: React.FC = () => {
         pointerEvents: 'auto',
       }}
     >
-      {/* Cụm nút điều khiển phong cách Roblox */}
       <button
-        onClick={() => setSettingsOpen(!isSettingsOpen)}
+        onClick={handleBtnClick(() => setSettingsOpen(!isSettingsOpen))}
         title="Cài đặt & Đồ họa (Settings)"
         style={iconBtnStyle(isSettingsOpen)}
       >
         ⚙️
       </button>
-
       <button
-        onClick={toggleChatVisible}
+        onClick={handleBtnClick(toggleChatVisible)}
         title="Ẩn / Hiện khung Chat"
         style={iconBtnStyle(isChatVisible)}
       >
         💬
       </button>
-
       <button
-        onClick={toggleHelp}
+        onClick={handleBtnClick(toggleHelp)}
         title="Bảng phím điều khiển"
         style={iconBtnStyle(showHelp)}
       >
         🎮
       </button>
-
       <button
-        onClick={rotateCurrentModel90}
+        onClick={handleBtnClick(rotateCurrentModel90)}
         title="Xoay hướng đầu thú 90° (Phím T)"
         style={iconBtnStyle(false)}
       >
         ↻
       </button>
+      <button
+        onClick={handleBtnClick(toggleNightVision)}
+        title="Tầm nhìn Ban Đêm - Night Vision (Phím N)"
+        style={iconBtnStyle(nightVision)}
+      >
+        👁️
+      </button>
+      <button
+        onClick={handleBtnClick(toggleMapOpen)}
+        title="Mở Bản Đồ Toàn Đảo (Phím M)"
+        style={iconBtnStyle(isMapOpen)}
+      >
+        🗺️
+      </button>
 
-      {/* Thanh thông tin nhanh */}
       <div
         style={{
           height: '38px',

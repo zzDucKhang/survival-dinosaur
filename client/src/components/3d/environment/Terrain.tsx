@@ -8,16 +8,20 @@ import {
   OASIS_RADIUS,
   OASIS_X,
   OASIS_Z,
+  TERRAIN_SEGMENTS,
+  TERRAIN_SIZE,
   WATER_LEVEL,
 } from '../../../constants/terrain';
 
 export const Terrain: React.FC = React.memo(() => {
   const terrainGeometry = useMemo(() => {
-    const size = 1200;
-    const segments = 128;
-    const geo = new THREE.PlaneGeometry(size, size, segments, segments);
+    const geo = new THREE.PlaneGeometry(
+      TERRAIN_SIZE,
+      TERRAIN_SIZE,
+      TERRAIN_SEGMENTS,
+      TERRAIN_SEGMENTS
+    );
     geo.rotateX(-Math.PI / 2);
-
     const pos = geo.attributes.position;
     const colors = new Float32Array(pos.count * 3);
     const color = new THREE.Color();
@@ -29,9 +33,9 @@ export const Terrain: React.FC = React.memo(() => {
       pos.setY(i, y);
 
       if (y < -0.5) {
-        color.set('#5a4f3a'); // Đáy hồ
+        color.set('#4c5c39'); // Lòng thung lũng / Đáy hồ
       } else if (y < 0.4) {
-        color.set('#9e8b63'); // Bờ cát
+        color.set('#9e8b63'); // Bờ cát / Đất thấp
       } else if (y < 7.5) {
         color.set('#3d6b3c'); // Đồng cỏ thung lũng
       } else if (y < 16.5) {
@@ -57,8 +61,6 @@ export const Terrain: React.FC = React.memo(() => {
       <mesh geometry={terrainGeometry} receiveShadow>
         <meshStandardMaterial vertexColors roughness={0.92} metalness={0.03} />
       </mesh>
-
-      {/* Hồ Oasis (60, -60) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[OASIS_X, WATER_LEVEL, OASIS_Z]}>
         <circleGeometry args={[OASIS_RADIUS + 5, 36]} />
         <meshStandardMaterial
@@ -71,8 +73,6 @@ export const Terrain: React.FC = React.memo(() => {
           opacity={0.86}
         />
       </mesh>
-
-      {/* Hồ Cao Nguyên (-160, 140) */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[HIGHLAND_LAKE_X, WATER_LEVEL, HIGHLAND_LAKE_Z]}>
         <circleGeometry args={[HIGHLAND_LAKE_RADIUS + 6, 36]} />
         <meshStandardMaterial

@@ -20,22 +20,41 @@ class SoundEngine {
     return this.ctx;
   }
 
-  public playRoar() {
+  // Tiếng gầm thay đổi cao độ theo kích thước trưởng thành & 4 kiểu gọi The Isle
+  public playRoar(callType: number = 1, growth: number = 0.8) {
     const ctx = this.getContext();
     if (!ctx) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(145, now);
-    osc.frequency.exponentialRampToValueAtTime(58, now + 0.9);
+    const sizePitch = Math.max(0.65, 1.45 - growth * 0.55);
+
+    if (callType === 2) {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(210 * sizePitch, now);
+      osc.frequency.exponentialRampToValueAtTime(320 * sizePitch, now + 0.25);
+      osc.frequency.exponentialRampToValueAtTime(190 * sizePitch, now + 0.55);
+    } else if (callType === 3) {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(115 * sizePitch, now);
+      osc.frequency.exponentialRampToValueAtTime(48 * sizePitch, now + 0.75);
+    } else if (callType === 4) {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(420 * sizePitch, now);
+      osc.frequency.exponentialRampToValueAtTime(260 * sizePitch, now + 0.45);
+    } else {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(155 * sizePitch, now);
+      osc.frequency.exponentialRampToValueAtTime(62 * sizePitch, now + 0.9);
+    }
+
     gain.gain.setValueAtTime(0.01, now);
     gain.gain.linearRampToValueAtTime(0.18, now + 0.12);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.05);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
-    osc.stop(now + 1.1);
+    osc.stop(now + 1.05);
   }
 
   public playBite() {
@@ -70,6 +89,23 @@ class SoundEngine {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + 0.42);
+  }
+
+  public playRest(entering: boolean) {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(entering ? 240 : 180, now);
+    osc.frequency.exponentialRampToValueAtTime(entering ? 120 : 300, now + 0.25);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.3);
   }
 }
 
