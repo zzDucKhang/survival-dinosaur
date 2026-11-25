@@ -1,0 +1,28 @@
+# 1. File biên dịch (Binary) & thư mục build của Go (chặn server/bin/server.exe)
+/server/bin/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 2. File test và coverage của Go
+*.test
+*.out
+coverage.*
+
+# 3. Biến môi trường & thông tin nhạy cảm
+.env
+.env.*
+
+# 4. Frontend (do dự án có dùng Vite)
+node_modules/
+dist/
+.vite/
+
+# 5. Hệ điều hành & trình soạn thảo
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
