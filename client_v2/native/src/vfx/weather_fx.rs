@@ -144,8 +144,9 @@ pub fn update_weather_fx(
             continue;
         }
 
+        let speed = pool.speeds[i];
         let off = &mut pool.offsets[i];
-        off.y -= pool.speeds[i] * fall_mult * dt;
+        off.y -= speed * fall_mult * dt;
         off.x += wind_x * dt;
 
         if off.y < -2.0 {
