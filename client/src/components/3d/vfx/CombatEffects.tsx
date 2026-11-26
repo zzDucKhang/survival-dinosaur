@@ -43,6 +43,8 @@ export const CombatEffects: React.FC = () => {
         const yOffset = evt.y + age * 2.4;
         const isHeal = evt.attackType === 'heal';
         const isRoar = evt.attackType === 'roar';
+        const isBoneBreak = evt.attackType === 'bonebreak';
+        const isSpecial = evt.attackType === 'special';
         const roarMeta = ROAR_LABELS[evt.damage] || ROAR_LABELS[1];
 
         let text = `🩸 -${evt.damage} HP`;
@@ -50,6 +52,12 @@ export const CombatEffects: React.FC = () => {
         if (evt.isKill) {
           text = `💀 HẠ GỤC! -${evt.damage}`;
           color = '#fde047';
+        } else if (isBoneBreak) {
+          text = `🦴 GÃY XƯƠNG! -${evt.damage}`;
+          color = '#fb923c';
+        } else if (isSpecial) {
+          text = `⚡ CHIÊU MẠNH! -${evt.damage}`;
+          color = '#facc15';
         } else if (isHeal) {
           text = `💚 +${evt.damage} HP`;
           color = evt.damage >= 15 ? '#38bdf8' : '#4ade80';
@@ -69,7 +77,7 @@ export const CombatEffects: React.FC = () => {
                   transform: `scale(${1 + (1 - age) * 0.22})`,
                   fontFamily: 'system-ui, sans-serif',
                   fontWeight: '900',
-                  fontSize: evt.isKill || isRoar ? '17px' : '15px',
+                  fontSize: evt.isKill || isRoar || isBoneBreak ? '17px' : '15px',
                   color,
                   textShadow: '0 2px 8px rgba(0,0,0,0.95)',
                   whiteSpace: 'nowrap',

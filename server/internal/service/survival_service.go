@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"time"
 
 	"dino-server/internal/models"
@@ -11,8 +12,8 @@ import (
 )
 
 const (
-	OutOfCombatSeconds = 30.0 // Không giao chiến 30s -> hồi +5 HP/s
-	RestUnlockSeconds  = 3.0  // Sau 3s mới mở khóa nút Hết nghỉ ngơi
+	OutOfCombatSeconds = 30.0
+	RestUnlockSeconds  = 3.0
 	OutOfCombatHealPS  = 5
 	RestHealPS         = 20
 )
@@ -22,6 +23,19 @@ func (s *GameService) ScaleMaxHP(baseHP int, growth float64) int {
 		baseHP = 100
 	}
 	return int(math.Round(float64(baseHP) * (0.45 + 0.65*growth)))
+}
+
+func (s *GameService) GetSpecialCooldown(model string) float64 {
+	switch strings.ToLower(model) {
+	case "trex", "t-rex":
+		return 12.0
+	case "tricera", "mammoth":
+		return 10.0
+	case "stego":
+		return 9.0
+	default:
+		return 8.0
+	}
 }
 
 func (s *GameService) ToggleRest(playerID string) {
@@ -44,7 +58,6 @@ func (s *GameService) ToggleRest(playerID string) {
 		return
 	}
 
-	// Đang nghỉ ngơi: chỉ cho đứng dậy sau đủ 3 giây
 	if now.Sub(p.RestStartedAt).Seconds() < RestUnlockSeconds {
 		return
 	}
@@ -135,7 +148,6 @@ func (s *GameService) ProcessInteract(playerID string) {
 		return
 	}
 
-	// 1. Uống nước tại Hồ Oasis hoặc Hồ Cao Nguyên
 	if world.IsNearWater(p.X, p.Z) && p.Thirst < 99 {
 		p.LastEatTime = now
 		p.Thirst = math.Min(100, p.Thirst+35)
@@ -143,14 +155,13 @@ func (s *GameService) ProcessInteract(playerID string) {
 		return
 	}
 
-	// 2. Ăn thịt hoặc bụi quả mọng (+11% tăng trưởng mỗi miếng)
 	desiredType := "meat"
 	if p.Diet == models.DietHerbivore {
 		desiredType = "plant"
 	}
 
 	var bestFood *models.WorldFood
-	bestDistSq := 64.0 // 8.0 * 8.0
+	bestDistSq := 64.0
 	for _, f := range s.repo.Foods {
 		if f.Type != desiredType || f.Amount <= 0 {
 			continue
@@ -240,7 +251,10 @@ func (s *GameService) handlePlayerDeathLocked(target *models.Player, attacker *m
 	target.RegenRate = 0
 	target.LastCombatTime = time.Time{}
 	target.BleedTimer = 0
+	target.BoneBreakTimer = 0
+	target.SpecialCDLeft = 0
 	target.BleedTickAccum = 0
+	target.BloodTrailAccum = 0
 	target.StarveTickAccum = 0
 	target.RegenTickAccum = 0
 	target.ProvokedByID = ""
@@ -265,6 +279,19 @@ func (s *GameService) stepSurvivalLocked(dt float64) {
 	now := time.Now()
 	nowUnix := now.Unix()
 
+	// Dọn các vệt máu đã hết hạn (sau 45s)
+	if len(s.repo.BloodTrails) > 0 {
+		kept := s.repo.BloodTrails[:0]
+		for _, bt := range s.repo.BloodTrails {
+			if nowUnix < bt.ExpiresAt {
+				kept = append(kept, bt)
+			} else {
+				s.repo.BloodDirty = true
+			}
+		}
+		s.repo.BloodTrails = kept
+	}
+
 	s.plantRegenAccum += dt
 	shouldRegenPlants := false
 	if s.plantRegenAccum >= 0.5 {
@@ -282,9 +309,55 @@ func (s *GameService) stepSurvivalLocked(dt float64) {
 		}
 	}
 
+	isRaining := s.repo.Weather == models.WeatherRain || s.repo.Weather == models.WeatherStorm
+
 	for _, p := range s.repo.Players {
+		// Giảm hiệu ứng gãy xương & rải vệt máu cho cả AI lẫn Người chơi
+		if p.BoneBreakTimer > 0 {
+			decay := dt
+			if p.IsResting {
+				decay = dt * 1.8
+			}
+			p.BoneBreakTimer = math.Max(0, p.BoneBreakTimer-decay)
+		}
+
+		if p.BleedTimer > 0 {
+			p.BloodTrailAccum += dt
+			if p.BloodTrailAccum >= 2.2 {
+				p.BloodTrailAccum = 0
+				s.repo.BloodTrails = append(s.repo.BloodTrails, models.BloodTrail{
+					ID:        fmt.Sprintf("bld-%d-%s", now.UnixNano(), p.ID),
+					X:         math.Round(p.X*100) / 100,
+					Z:         math.Round(p.Z*100) / 100,
+					ExpiresAt: nowUnix + 45,
+				})
+				if len(s.repo.BloodTrails) > 44 {
+					s.repo.BloodTrails = s.repo.BloodTrails[len(s.repo.BloodTrails)-44:]
+				}
+				s.repo.BloodDirty = true
+			}
+		} else {
+			p.BloodTrailAccum = 0
+		}
+
 		if p.IsAI {
+			if p.BleedTimer > 0 {
+				p.BleedTimer = math.Max(0, p.BleedTimer-dt)
+			}
 			continue
+		}
+
+		// Cooldown chiêu đặc trưng (V)
+		if !p.LastSpecialTime.IsZero() {
+			cd := s.GetSpecialCooldown(p.Model)
+			elapsed := now.Sub(p.LastSpecialTime).Seconds()
+			if elapsed < cd {
+				p.SpecialCDLeft = math.Round((cd-elapsed)*10) / 10
+			} else {
+				p.SpecialCDLeft = 0
+			}
+		} else {
+			p.SpecialCDLeft = 0
 		}
 
 		// 1. Đếm ngược 3s mở khóa nút Hết nghỉ ngơi
@@ -312,17 +385,21 @@ func (s *GameService) stepSurvivalLocked(dt float64) {
 			p.CombatTimerLeft = 0
 		}
 
-		// 3. Tiêu hao Đói / Khát
+		// 3. Tiêu hao Đói / Khát (mưa rào/bão giúp giảm tụt khát 55%)
 		drainMult := 1.0
 		if p.IsResting {
 			drainMult = 0.5
 		} else if p.IsCrouching {
 			drainMult = 0.8
 		}
+		thirstWeatherMult := 1.0
+		if isRaining {
+			thirstWeatherMult = 0.45
+		}
 		p.Hunger = math.Max(0, p.Hunger-dt*0.34*drainMult)
-		p.Thirst = math.Max(0, p.Thirst-dt*0.44*drainMult)
+		p.Thirst = math.Max(0, p.Thirst-dt*0.44*drainMult*thirstWeatherMult)
 
-		// 4. Tăng trưởng liên tục 0.45 -> 1.25
+		// 4. Tăng trưởng liên tục
 		if p.Growth < 1.25 && p.Hunger > 20 && p.Thirst > 20 {
 			growRate := 0.0065
 			if p.IsResting {
@@ -337,7 +414,7 @@ func (s *GameService) stepSurvivalLocked(dt float64) {
 			}
 		}
 
-		// 5. Chảy máu (nghỉ ngơi cầm máu nhanh gấp 3 lần)
+		// 5. Chảy máu
 		if p.BleedTimer > 0 {
 			bleedDecay := dt
 			if p.IsResting {
@@ -379,7 +456,7 @@ func (s *GameService) stepSurvivalLocked(dt float64) {
 			p.BleedTickAccum = 0
 		}
 
-		// 6. Chết đói/khát HOẶC Hồi máu (+20 HP/s khi nghỉ | +5 HP/s khi hết giao chiến 30s)
+		// 6. Chết đói/khát HOẶC Hồi máu (+20 HP/s khi nghỉ | +5 HP/s sau 30s không giao chiến)
 		p.RegenRate = 0
 		if p.Hunger <= 0 || p.Thirst <= 0 {
 			p.RegenTickAccum = 0
@@ -400,9 +477,9 @@ func (s *GameService) stepSurvivalLocked(dt float64) {
 			p.StarveTickAccum = 0
 			healPerSec := 0
 			if p.IsResting {
-				healPerSec = RestHealPS // +20 HP/s
+				healPerSec = RestHealPS
 			} else if p.CombatTimerLeft <= 0 && p.BleedTimer <= 0 {
-				healPerSec = OutOfCombatHealPS // +5 HP/s
+				healPerSec = OutOfCombatHealPS
 			}
 
 			if healPerSec > 0 && p.HP < p.MaxHP {

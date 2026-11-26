@@ -24,6 +24,7 @@ interface RemoteDinoProps {
 export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
   const dinoScaleMultiplier = useGameStore((s) => s.dinoScaleMultiplier);
   const modelRotationOffsets = useGameStore((s) => s.modelRotationOffsets);
+  const myPackId = useGameStore((s) => s.packId);
   const initialData = playersMutable[id];
   const dino = getDinoSpec(initialData?.model);
   const userExtraYaw = modelRotationOffsets[dino.id.toLowerCase()] || 0;
@@ -36,12 +37,16 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
   const hpBarRef = useRef<HTMLDivElement>(null);
   const aiStateLabelRef = useRef<HTMLSpanElement>(null);
   const restTagRef = useRef<HTMLSpanElement>(null);
+  const boneTagRef = useRef<HTMLSpanElement>(null);
+  const packTagRef = useRef<HTMLSpanElement>(null);
+  const badgeBoxRef = useRef<HTMLDivElement>(null);
 
-  const [showLabel, setShowLabel] = useState(true);
-  const showLabelRef = useRef(true);
+  const [showLabel, setShowLabel] = useState(false);
+  const showLabelRef = useRef(false);
   const lastLabelCheck = useRef(0);
   const restBlendRef = useRef(0);
   const crouchBlendRef = useRef(0);
+  const wasCulledRef = useRef(false);
 
   const {
     clonedScene,
@@ -63,8 +68,31 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
   useFrame((_, rawDelta) => {
     const p = playersMutable[id];
     if (!p || !group.current || !modelHolderRef.current || !slopeGroupRef.current) return;
-    const delta = Math.min(rawDelta, 0.1);
 
+    const dxMe = p.x - localTransformMutable.x;
+    const dzMe = p.z - localTransformMutable.z;
+    const distSq = dxMe * dxMe + dzMe * dzMe;
+    const isPackmate = Boolean(!p.isAi && myPackId && p.packId && p.packId === myPackId);
+
+    // Distance Culling: Ẩn hoàn toàn SkinnedMesh ở xa > 165m (giảm mạnh tải GPU/CPU)
+    const cullDistSq = isPackmate ? 280 * 280 : 165 * 165;
+    if (distSq > cullDistSq) {
+      if (group.current.visible) {
+        group.current.visible = false;
+      }
+      if (showLabelRef.current) {
+        showLabelRef.current = false;
+        setShowLabel(false);
+      }
+      wasCulledRef.current = true;
+      return;
+    }
+
+    if (!group.current.visible) {
+      group.current.visible = true;
+    }
+
+    const delta = Math.min(rawDelta, 0.1);
     calibrateAfterRender(group.current, modelHolderRef.current);
 
     const growthVal = typeof p.growth === 'number' && p.growth > 0 ? p.growth : 0.9;
@@ -103,8 +131,15 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
         dino.nametagHeight * visualMult * (1 - restFactor * 0.28 - crouchFactor * 0.12);
     }
 
-    const nextX = THREE.MathUtils.lerp(group.current.position.x, p.x, Math.min(1, delta * 12));
-    const nextZ = THREE.MathUtils.lerp(group.current.position.z, p.z, Math.min(1, delta * 12));
+    let nextX = p.x;
+    let nextZ = p.z;
+    if (!wasCulledRef.current) {
+      nextX = THREE.MathUtils.lerp(group.current.position.x, p.x, Math.min(1, delta * 12));
+      nextZ = THREE.MathUtils.lerp(group.current.position.z, p.z, Math.min(1, delta * 12));
+    } else {
+      wasCulledRef.current = false;
+    }
+
     const exactGroundY = getEntityGroundHeight(nextX, nextZ);
     targetPos.set(nextX, exactGroundY, nextZ);
     group.current.position.copy(targetPos);
@@ -115,22 +150,25 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
     if (diff < -Math.PI) diff += Math.PI * 2;
     group.current.rotation.y += diff * Math.min(1, delta * 10);
 
-    const slope = getTerrainSlope(
-      nextX,
-      nextZ,
-      group.current.rotation.y,
-      Math.max(1.2, 1.5 * visualMult)
-    );
-    slopeGroupRef.current.rotation.x = THREE.MathUtils.lerp(
-      slopeGroupRef.current.rotation.x,
-      slope.pitch + crouchFactor * 0.1 + restFactor * 0.06,
-      Math.min(1, delta * 10)
-    );
-    slopeGroupRef.current.rotation.z = THREE.MathUtils.lerp(
-      slopeGroupRef.current.rotation.z,
-      slope.roll,
-      Math.min(1, delta * 10)
-    );
+    // Chỉ tính góc nghiêng địa hình khi bot ở trong vòng 95m
+    if (distSq < 95 * 95) {
+      const slope = getTerrainSlope(
+        nextX,
+        nextZ,
+        group.current.rotation.y,
+        Math.max(1.2, 1.5 * visualMult)
+      );
+      slopeGroupRef.current.rotation.x = THREE.MathUtils.lerp(
+        slopeGroupRef.current.rotation.x,
+        slope.pitch + crouchFactor * 0.1 + restFactor * 0.06,
+        Math.min(1, delta * 10)
+      );
+      slopeGroupRef.current.rotation.z = THREE.MathUtils.lerp(
+        slopeGroupRef.current.rotation.z,
+        slope.roll,
+        Math.min(1, delta * 10)
+      );
+    }
 
     const nextAnim = (p.isResting ? 'rest' : p.anim || 'idle') as AnimState;
     if (nextAnim !== activeAnimRef.current) {
@@ -144,19 +182,20 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
     const now = performance.now();
     if (now - lastLabelCheck.current > 350) {
       lastLabelCheck.current = now;
-      const distToMe = Math.hypot(p.x - localTransformMutable.x, p.z - localTransformMutable.z);
+      const distToMe = Math.sqrt(distSq);
 
-      // Giới hạn khoảng cách thấy tên vào ban đêm theo bán kính Night Vision
-      const sunAngle = (worldTimeMutable.value - 0.25) * Math.PI * 2;
-      const isNight = Math.sin(sunAngle) < 0.05;
-      let maxVisibleDist = 75;
-      if (isNight) {
-        const st = useGameStore.getState();
-        if (st.nightVision) {
-          const mySpec = getDinoSpec(st.selectedModel);
-          maxVisibleDist = mySpec.diet === 'carnivore' ? 55 : 42;
-        } else {
-          maxVisibleDist = 20;
+      let maxVisibleDist = isPackmate ? 260 : 75;
+      if (!isPackmate) {
+        const sunAngle = (worldTimeMutable.value - 0.25) * Math.PI * 2;
+        const isNight = Math.sin(sunAngle) < 0.05;
+        if (isNight) {
+          const st = useGameStore.getState();
+          if (st.nightVision) {
+            const mySpec = getDinoSpec(st.selectedModel);
+            maxVisibleDist = mySpec.diet === 'carnivore' ? 55 : 42;
+          } else {
+            maxVisibleDist = 20;
+          }
         }
       }
 
@@ -171,6 +210,13 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
       const maxHp = p.maxHp || 100;
       const pct = Math.max(0, Math.min(100, (p.hp / maxHp) * 100));
       hpBarRef.current.style.width = `${pct}%`;
+      if (isPackmate) {
+        hpBarRef.current.style.background = '#38bdf8';
+      }
+    }
+    if (badgeBoxRef.current && isPackmate) {
+      badgeBoxRef.current.style.borderColor = '#38bdf8';
+      badgeBoxRef.current.style.color = '#7dd3fc';
     }
     if (aiStateLabelRef.current && p.aiState) {
       aiStateLabelRef.current.textContent = p.aiState;
@@ -179,6 +225,12 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
     }
     if (restTagRef.current) {
       restTagRef.current.style.display = p.isResting ? 'inline' : 'none';
+    }
+    if (boneTagRef.current) {
+      boneTagRef.current.style.display = (p.boneBreak || 0) > 0 ? 'inline' : 'none';
+    }
+    if (packTagRef.current) {
+      packTagRef.current.style.display = isPackmate ? 'inline' : 'none';
     }
   });
 
@@ -213,6 +265,7 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
               }}
             >
               <div
+                ref={badgeBoxRef}
                 style={{
                   background: isAI ? 'rgba(30, 27, 75, 0.9)' : 'rgba(15, 23, 42, 0.9)',
                   border: isHerbivore
@@ -231,6 +284,12 @@ export const RemoteDino: React.FC<RemoteDinoProps> = React.memo(({ id }) => {
                   boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
                 }}
               >
+                <span ref={packTagRef} style={{ display: 'none', marginRight: '4px' }}>
+                  🐾
+                </span>
+                <span ref={boneTagRef} style={{ display: 'none', marginRight: '4px' }}>
+                  🦴
+                </span>
                 <span ref={restTagRef} style={{ display: 'none', marginRight: '4px' }}>
                   💤
                 </span>

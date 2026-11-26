@@ -1,0 +1,23 @@
+# Thư mục biên dịch Rust / Cargo (nguyên nhân chính gây nặng ~500MB)
+native/target/
+**/target/
+**/*.rs.bk
+**/*.pdb
+**/*.exe
+
+# Thư mục thư viện & bản build của React HUD
+hud/node_modules/
+**/node_modules/
+hud/dist/
+hud/.vite/
+
+# Chặn đẩy nhầm tài nguyên 3D nặng (vì game dùng chung ../../client/public)
+**/*.glb
+**/*.gltf
+**/*.hdr
+**/*.bin
+
+# File tạm & log hệ thống
+*.log
+.DS_Store
+Thumbs.db

@@ -6,6 +6,7 @@ import { Foliage } from './environment/Foliage';
 import { WorldFoods } from './environment/WorldFoods';
 import { CombatEffects } from './vfx/CombatEffects';
 import { ScentPulse } from './vfx/ScentPulse';
+import { WeatherAndTrails } from './vfx/WeatherAndTrails';
 import { LocalDino } from './LocalDino';
 import { RemoteDino } from './RemoteDino';
 
@@ -23,11 +24,10 @@ export const Scene: React.FC = () => {
       <Terrain />
       <Foliage />
       <WorldFoods />
+      <WeatherAndTrails />
       <CombatEffects />
       <ScentPulse />
-
       <LocalDino />
-
       {remoteIds.map((id) => {
         const modelKey = playersMutable[id]?.model || 'trex';
         return <RemoteDino key={`${id}-${modelKey}`} id={id} />;

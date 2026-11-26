@@ -1,11 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useGameStore, worldTimeMutable } from '../../../store/useGameStore';
 import { getDinoSpec } from '../../../constants/dinosaurs';
+import type { WeatherType } from '../../../types/game';
+
+const WEATHER_BADGE: Record<WeatherType, { label: string; color: string }> = {
+  clear: { label: '🌤️ Quang', color: '#fde68a' },
+  fog: { label: '🌫️ Sương mù', color: '#cbd5e1' },
+  rain: { label: '🌧️ Mưa rào', color: '#7dd3fc' },
+  storm: { label: '⛈️ Bão giông', color: '#c084fc' },
+};
 
 export const RobloxTopLeftBar: React.FC = () => {
   const selectedModel = useGameStore((s) => s.selectedModel);
   const playerCount = useGameStore((s) => s.playerIds.length);
   const kills = useGameStore((s) => s.kills);
+  const weather = useGameStore((s) => s.weather);
   const isConnected = useGameStore((s) => s.isConnected);
   const isSettingsOpen = useGameStore((s) => s.isSettingsOpen);
   const setSettingsOpen = useGameStore((s) => s.setSettingsOpen);
@@ -18,6 +27,8 @@ export const RobloxTopLeftBar: React.FC = () => {
   const toggleNightVision = useGameStore((s) => s.toggleNightVision);
   const isMapOpen = useGameStore((s) => s.isMapOpen);
   const toggleMapOpen = useGameStore((s) => s.toggleMapOpen);
+  const showLeaderboard = useGameStore((s) => s.showLeaderboard);
+  const setShowLeaderboard = useGameStore((s) => s.setShowLeaderboard);
 
   const [fps, setFps] = useState(60);
   const [clockLabel, setClockLabel] = useState('☀️ 08:30');
@@ -47,6 +58,7 @@ export const RobloxTopLeftBar: React.FC = () => {
   }, []);
 
   const dino = getDinoSpec(selectedModel);
+  const weatherMeta = WEATHER_BADGE[weather] || WEATHER_BADGE.clear;
   const fpsColor = fps >= 55 ? '#4ade80' : fps >= 30 ? '#facc15' : '#f87171';
 
   const iconBtnStyle = (active: boolean): React.CSSProperties => ({
@@ -125,6 +137,13 @@ export const RobloxTopLeftBar: React.FC = () => {
       >
         🗺️
       </button>
+      <button
+        onClick={handleBtnClick(() => setShowLeaderboard(!showLeaderboard))}
+        title="Bảng Sinh Tồn & Bầy Đàn (Tab)"
+        style={iconBtnStyle(showLeaderboard)}
+      >
+        🏆
+      </button>
 
       <div
         style={{
@@ -135,7 +154,7 @@ export const RobloxTopLeftBar: React.FC = () => {
           padding: '0 14px',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
+          gap: '11px',
           fontSize: '12px',
           fontWeight: '700',
           boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
@@ -146,6 +165,7 @@ export const RobloxTopLeftBar: React.FC = () => {
         </span>
         <span style={{ color: '#475569' }}>|</span>
         <span style={{ color: '#fde047' }}>{clockLabel}</span>
+        <span style={{ color: weatherMeta.color }}>{weatherMeta.label}</span>
         <span style={{ color: '#f87171' }}>💀 {kills}</span>
         <span style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '5px' }}>
           <span

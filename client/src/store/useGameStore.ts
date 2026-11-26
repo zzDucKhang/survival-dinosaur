@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import type {
+  BloodTrail,
   ChatMessage,
   CombatEvent,
   DinoModelType,
   FoodItem,
   GraphicsQuality,
   PlayerData,
+  WeatherType,
 } from '../types/game';
 
 export const playersMutable: Record<string, PlayerData> = {};
 export const foodsMutable: Record<string, FoodItem> = {};
+export const bloodTrailsMutable: BloodTrail[] = [];
 export const localTransformMutable = { x: 0, y: 0, z: 0, rot: 0 };
 export const worldTimeMutable = { value: 0.36 };
 export const combatEventsQueue: Array<CombatEvent & { createdAt: number }> = [];
@@ -45,6 +48,9 @@ interface GameStore {
   isConnected: boolean;
   playerIds: string[];
   foodIds: string[];
+  bloodTrailsVersion: number;
+  weather: WeatherType;
+
   stamina: number;
   health: number;
   maxHealth: number;
@@ -52,12 +58,17 @@ interface GameStore {
   thirst: number;
   growth: number;
   bleed: number;
+  boneBreak: number;
+  specialCd: number;
   kills: number;
   isResting: boolean;
   restUnlockLeft: number;
   combatTimerLeft: number;
   regenRate: number;
   isCrouching: boolean;
+  packId: string;
+  packInviteFrom: string;
+  packInviteName: string;
   respawnSeq: number;
   deathInfo: DeathInfo | null;
   lastDamagedAt: number;
@@ -104,9 +115,11 @@ interface GameStore {
   syncFromServer: (payload: {
     players?: Record<string, PlayerData>;
     foods?: Record<string, FoodItem>;
+    bloodTrails?: BloodTrail[];
     events?: CombatEvent[];
     chats?: ChatMessage[];
     worldTime?: number;
+    weather?: WeatherType;
   }) => void;
 }
 
@@ -120,6 +133,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isConnected: false,
   playerIds: [],
   foodIds: [],
+  bloodTrailsVersion: 0,
+  weather: 'clear',
+
   stamina: 100,
   health: 100,
   maxHealth: 100,
@@ -127,12 +143,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
   thirst: 90,
   growth: 0.45,
   bleed: 0,
+  boneBreak: 0,
+  specialCd: 0,
   kills: 0,
   isResting: false,
   restUnlockLeft: 0,
   combatTimerLeft: 0,
   regenRate: 0,
   isCrouching: false,
+  packId: '',
+  packInviteFrom: '',
+  packInviteName: '',
   respawnSeq: 0,
   deathInfo: null,
   lastDamagedAt: 0,
@@ -180,6 +201,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             combatTimerLeft: 0,
             regenRate: 0,
             isCrouching: false,
+            boneBreak: 0,
+            specialCd: 0,
+            packId: '',
+            packInviteFrom: '',
+            packInviteName: '',
             deathInfo: null,
             showLeaderboard: false,
             isMapOpen: false,
@@ -196,8 +222,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setActionHint: (hint) => {
     if (get().actionHint !== hint) set({ actionHint: hint });
   },
-  setSettingsOpen: (open) => set({ isSettingsOpen: open, isMapOpen: open ? false : get().isMapOpen }),
-  setMapOpen: (open) => set({ isMapOpen: open, isSettingsOpen: open ? false : get().isSettingsOpen }),
+  setSettingsOpen: (open) =>
+    set({ isSettingsOpen: open, isMapOpen: open ? false : get().isMapOpen }),
+  setMapOpen: (open) =>
+    set({ isMapOpen: open, isSettingsOpen: open ? false : get().isSettingsOpen }),
   toggleMapOpen: () =>
     set((s) => ({
       isMapOpen: !s.isMapOpen,
@@ -225,12 +253,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
   triggerScent: () => set({ scentUntil: performance.now() + 6500 }),
 
-  syncFromServer: ({ players, foods, events, chats, worldTime }) => {
+  syncFromServer: ({ players, foods, bloodTrails, events, chats, worldTime, weather }) => {
     if (typeof worldTime === 'number') {
       worldTimeMutable.value = worldTime;
     }
     const state = get();
     const patch: Partial<GameStore> = {};
+
+    if (weather && weather !== state.weather) {
+      patch.weather = weather;
+    }
 
     if (players) {
       const incomingIds = Object.keys(players);
@@ -251,6 +283,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const nextGrowth =
           typeof me.growth === 'number' ? Math.round(me.growth * 100) / 100 : state.growth;
         const nextBleed = typeof me.bleed === 'number' ? Math.ceil(me.bleed) : state.bleed;
+        const nextBoneBreak =
+          typeof me.boneBreak === 'number' ? Math.ceil(me.boneBreak) : state.boneBreak;
+        const nextSpecialCd =
+          typeof me.specialCd === 'number' ? Math.max(0, Math.round(me.specialCd * 10) / 10) : 0;
         const nextKills = typeof me.kills === 'number' ? me.kills : state.kills;
         const nextResting = Boolean(me.isResting);
         const nextRestUnlock =
@@ -261,6 +297,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
           typeof me.combatTimerLeft === 'number' ? Math.max(0, Math.ceil(me.combatTimerLeft)) : 0;
         const nextRegenRate = typeof me.regenRate === 'number' ? me.regenRate : 0;
         const nextCrouching = Boolean(me.isCrouching);
+        const nextPackId = me.packId || '';
+        const nextInviteFrom = me.packInviteFrom || '';
+        const nextInviteName = me.packInviteName || '';
         const nextRespawnSeq = typeof me.respawnSeq === 'number' ? me.respawnSeq : state.respawnSeq;
 
         if (nextHp !== state.health) patch.health = nextHp;
@@ -269,12 +308,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (nextThirst !== state.thirst) patch.thirst = nextThirst;
         if (nextGrowth !== state.growth) patch.growth = nextGrowth;
         if (nextBleed !== state.bleed) patch.bleed = nextBleed;
+        if (nextBoneBreak !== state.boneBreak) patch.boneBreak = nextBoneBreak;
+        if (nextSpecialCd !== state.specialCd) patch.specialCd = nextSpecialCd;
         if (nextKills !== state.kills) patch.kills = nextKills;
         if (nextResting !== state.isResting) patch.isResting = nextResting;
         if (nextRestUnlock !== state.restUnlockLeft) patch.restUnlockLeft = nextRestUnlock;
         if (nextCombatTimer !== state.combatTimerLeft) patch.combatTimerLeft = nextCombatTimer;
         if (nextRegenRate !== state.regenRate) patch.regenRate = nextRegenRate;
         if (nextCrouching !== state.isCrouching) patch.isCrouching = nextCrouching;
+        if (nextPackId !== state.packId) patch.packId = nextPackId;
+        if (nextInviteFrom !== state.packInviteFrom) patch.packInviteFrom = nextInviteFrom;
+        if (nextInviteName !== state.packInviteName) patch.packInviteName = nextInviteName;
         if (nextRespawnSeq > state.respawnSeq) {
           patch.respawnSeq = nextRespawnSeq;
           patch.deathInfo = {
@@ -314,6 +358,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
       if (foodChanged) patch.foodIds = incomingFoodIds;
+    }
+
+    if (bloodTrails) {
+      bloodTrailsMutable.length = 0;
+      for (let i = 0; i < bloodTrails.length; i++) {
+        bloodTrailsMutable.push(bloodTrails[i]);
+      }
+      patch.bloodTrailsVersion = state.bloodTrailsVersion + 1;
     }
 
     if (events && events.length > 0) {

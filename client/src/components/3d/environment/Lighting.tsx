@@ -1,35 +1,37 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Sky, Stars } from '@react-three/drei';
+import { Environment, Sky, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import { localTransformMutable, useGameStore, worldTimeMutable } from '../../../store/useGameStore';
 import { getDinoSpec } from '../../../constants/dinosaurs';
+import { soundEngine } from '../../../core/sound';
+
+const discoveredHdrFiles = Object.keys(import.meta.glob('/public/textures/sky/*.hdr')).map((p) =>
+  p.replace(/^\/public/, '')
+);
 
 // =========================================================================
 // BẢNG TINH CHỈNH ÁNH SÁNG NGÀY / ĐÊM / ÁNH TRĂNG / NHÌN ĐÊM (CHỈNH TẠI ĐÂY)
 // =========================================================================
 const LIGHTING_CONFIG = {
-  // Ban đêm & Ánh trăng (Moonlight mạnh hơn Ambient để thấy rõ ánh trăng và bóng đổ)
-  nightExposure: 0.86,      // Độ phơi sáng ban đêm (0.7 = rất tối, 1.0 = sáng)
-  nightMoonIntensity: 0.15, // Cường độ đèn Mặt Trăng tạo ánh sáng bạc & bóng đổ rõ
-  nightAmbient: 0.09,       // Độ sáng nền vùng tối (giữ thấp để bóng đổ đậm rõ)
-  nightHemi: 0.24,          // Ánh sáng bầu trời/mặt đất ban đêm
-  nightFill: 0.1,           // Đèn bù ngược hướng rất nhẹ để không xóa mất bóng
-  nightFogNear: 42,         // Bắt đầu mờ sương ban đêm (mét)
-  nightFogFar: 180,         // Hết tầm nhìn ban đêm khi tắt nhìn đêm (mét)
+  nightExposure: 0.86,
+  nightMoonIntensity: 1.05,
+  nightAmbient: 0.18,
+  nightHemi: 0.24,
+  nightFill: 0.1,
+  nightFogNear: 42,
+  nightFogFar: 180,
 
-  // Ban ngày
-  daySunIntensity: 2.35,
-  dayAmbient: 0.85,
-  dayHemi: 1.0,
-  dayFogNear: 135,
-  dayFogFar: 520,
+  daySunIntensity: 2.25,
+  dayAmbient: 0.72,
+  dayHemi: 0.88,
+  dayFogNear: 125,
+  dayFogFar: 460,
 
-  // Tầm nhìn ban đêm (Night Vision - Phím N)
-  nvRadiusCarnivore: 55,    // Bán kính nhìn rõ cho loài ăn thịt (mét)
-  nvRadiusHerbivore: 42,    // Bán kính nhìn rõ cho loài ăn cỏ (mét)
-  nvLightIntensity: 3.8,    // Độ sáng đèn nhìn đêm trong bán kính
-  nvAmbientBonus: 0.16,     // Tăng nhẹ sáng nền khi bật NV
+  nvRadiusCarnivore: 55,
+  nvRadiusHerbivore: 42,
+  nvLightIntensity: 3.8,
+  nvAmbientBonus: 0.16,
 };
 
 export const Lighting: React.FC = () => {
@@ -42,6 +44,15 @@ export const Lighting: React.FC = () => {
       ? LIGHTING_CONFIG.nvRadiusCarnivore
       : LIGHTING_CONFIG.nvRadiusHerbivore;
 
+  const hdrPath = useMemo(() => {
+    return (
+      discoveredHdrFiles.find((f) => f.toLowerCase().includes('qwantani')) ||
+      discoveredHdrFiles.find((f) => f.toLowerCase().includes('sunset')) ||
+      discoveredHdrFiles[0] ||
+      null
+    );
+  }, []);
+
   const skyRef = useRef<React.ComponentRef<typeof Sky>>(null);
   const bgRef = useRef<THREE.Color>(null);
   const moonGroupRef = useRef<THREE.Group>(null);
@@ -53,6 +64,10 @@ export const Lighting: React.FC = () => {
   const hemiRef = useRef<THREE.HemisphereLight>(null);
   const fogRef = useRef<THREE.Fog>(null);
 
+  const weatherBlendRef = useRef({ fog: 0, storm: 0 });
+  const lightningFlashRef = useRef(0);
+  const nextLightningTimerRef = useRef(7);
+
   const lightTarget = useMemo(() => new THREE.Object3D(), []);
   useEffect(() => {
     scene.add(lightTarget);
@@ -61,31 +76,64 @@ export const Lighting: React.FC = () => {
     };
   }, [scene, lightTarget]);
 
-  const dayBg = useRef(new THREE.Color('#8fd3f4'));
-  const duskBg = useRef(new THREE.Color('#cf815e'));
+  const dayBg = useRef(new THREE.Color('#749bb3'));
+  const duskBg = useRef(new THREE.Color('#b56e52'));
   const nightBg = useRef(new THREE.Color('#091326'));
+  const stormBg = useRef(new THREE.Color('#1d2733'));
   const nvDarkBg = useRef(new THREE.Color('#040d0a'));
 
-  const dayFog = useRef(new THREE.Color('#a8def5'));
-  const duskFog = useRef(new THREE.Color('#cc8463'));
+  const dayFog = useRef(new THREE.Color('#86a5b5'));
+  const duskFog = useRef(new THREE.Color('#b57458'));
   const nightFog = useRef(new THREE.Color('#0b172c'));
+  const stormFog = useRef(new THREE.Color('#232e3b'));
   const nvDarkFog = useRef(new THREE.Color('#040f0b'));
 
-  const dayHemiSky = useRef(new THREE.Color('#f0f9ff'));
+  const dayHemiSky = useRef(new THREE.Color('#dce8f2'));
   const nightHemiSky = useRef(new THREE.Color('#4b6b9c'));
-  const dayHemiGround = useRef(new THREE.Color('#4a7c44'));
+  const dayHemiGround = useRef(new THREE.Color('#3b5936'));
   const nightHemiGround = useRef(new THREE.Color('#0d1624'));
 
   const tempColor = useRef(new THREE.Color());
   const tempBgColor = useRef(new THREE.Color());
+  const flashWhite = useRef(new THREE.Color('#e2f1ff'));
 
-  useFrame(() => {
-    const nightVision = useGameStore.getState().nightVision;
+  useFrame((_, rawDelta) => {
+    const dt = Math.min(rawDelta, 0.1);
+    const store = useGameStore.getState();
+    const nightVision = store.nightVision;
+    const weather = store.weather;
+
+    const targetFogW = weather === 'fog' ? 1 : weather === 'rain' ? 0.55 : weather === 'storm' ? 0.85 : 0;
+    const targetStormW = weather === 'storm' ? 1 : weather === 'rain' ? 0.55 : 0;
+    weatherBlendRef.current.fog = THREE.MathUtils.lerp(
+      weatherBlendRef.current.fog,
+      targetFogW,
+      Math.min(1, dt * 0.7)
+    );
+    weatherBlendRef.current.storm = THREE.MathUtils.lerp(
+      weatherBlendRef.current.storm,
+      targetStormW,
+      Math.min(1, dt * 0.7)
+    );
+
+    // Sấm chớp ngẫu nhiên khi có bão
+    if (weather === 'storm') {
+      nextLightningTimerRef.current -= dt;
+      if (nextLightningTimerRef.current <= 0) {
+        lightningFlashRef.current = 1.0;
+        nextLightningTimerRef.current = 9 + Math.random() * 14;
+        soundEngine.playThunder();
+      }
+    }
+    if (lightningFlashRef.current > 0) {
+      lightningFlashRef.current = Math.max(0, lightningFlashRef.current - dt * 2.8);
+    }
+    const flash = lightningFlashRef.current;
+
     const px = localTransformMutable.x;
     const py = localTransformMutable.y;
     const pz = localTransformMutable.z;
 
-    // 0.0=00h, 0.25=06h, 0.50=12h, 0.75=18h
     const t = worldTimeMutable.value;
     const sunAngle = (t - 0.25) * Math.PI * 2;
     const sunHeight = Math.sin(sunAngle);
@@ -93,7 +141,6 @@ export const Lighting: React.FC = () => {
     const sunY = sunHeight * 140;
     const sunZ = 60;
 
-    // Mặt Trăng mọc đối diện Mặt Trời
     const moonX = -sunX;
     const moonY = -sunY;
     const moonZ = -55;
@@ -102,13 +149,21 @@ export const Lighting: React.FC = () => {
     const nightFactor = 1 - dayFactor;
     const twilightFactor = 1 - Math.min(1, Math.abs(sunHeight) / 0.28);
     const nvStrength = nightVision ? THREE.MathUtils.clamp((nightFactor - 0.12) / 0.45, 0, 1) : 0;
+    const stormW = weatherBlendRef.current.storm;
+    const fogW = weatherBlendRef.current.fog;
 
     const exposureMult =
-      THREE.MathUtils.lerp(LIGHTING_CONFIG.nightExposure, 1.0, dayFactor) + nvStrength * 0.14;
+      THREE.MathUtils.lerp(LIGHTING_CONFIG.nightExposure, 0.96 - stormW * 0.16, dayFactor) +
+      nvStrength * 0.14 +
+      flash * 0.35;
     gl.toneMappingExposure = brightness * exposureMult;
 
+    // Điều khiển độ mạnh ánh sáng HDRI (IBL) mượt theo Ngày/Đêm/Bão
+    scene.environmentIntensity =
+      (0.06 + dayFactor * 0.42) * (1 - stormW * 0.35) + nvStrength * 0.08 + flash * 0.4;
+
     if (skyRef.current) {
-      skyRef.current.visible = dayFactor > 0.04;
+      skyRef.current.visible = dayFactor > 0.05 && stormW < 0.78;
       skyRef.current.position.set(px, 0, pz);
       const mat = skyRef.current.material as THREE.ShaderMaterial;
       if (mat?.uniforms?.sunPosition?.value) {
@@ -117,7 +172,7 @@ export const Lighting: React.FC = () => {
     }
 
     if (moonGroupRef.current) {
-      moonGroupRef.current.visible = moonY > -20;
+      moonGroupRef.current.visible = moonY > -20 && stormW < 0.65;
       moonGroupRef.current.position.set(
         px + moonX * 3.8,
         Math.max(48, moonY * 3.8),
@@ -126,16 +181,22 @@ export const Lighting: React.FC = () => {
     }
 
     if (starsGroupRef.current) {
-      starsGroupRef.current.visible = nightFactor > 0.35;
+      starsGroupRef.current.visible = nightFactor > 0.35 && stormW < 0.45;
       starsGroupRef.current.position.set(px, 0, pz);
     }
 
     tempBgColor.current.copy(nightBg.current).lerp(dayBg.current, dayFactor);
     if (twilightFactor > 0.08) {
-      tempBgColor.current.lerp(duskBg.current, twilightFactor * 0.45);
+      tempBgColor.current.lerp(duskBg.current, twilightFactor * 0.42);
+    }
+    if (stormW > 0.01) {
+      tempBgColor.current.lerp(stormBg.current, stormW * (0.4 + dayFactor * 0.5));
     }
     if (nvStrength > 0.01) {
       tempBgColor.current.lerp(nvDarkBg.current, nvStrength * 0.85);
+    }
+    if (flash > 0.01) {
+      tempBgColor.current.lerp(flashWhite.current, flash * 0.55);
     }
     if (bgRef.current) {
       bgRef.current.copy(tempBgColor.current);
@@ -144,25 +205,29 @@ export const Lighting: React.FC = () => {
     if (fogRef.current) {
       tempColor.current.copy(nightFog.current).lerp(dayFog.current, dayFactor);
       if (twilightFactor > 0.08) {
-        tempColor.current.lerp(duskFog.current, twilightFactor * 0.4);
+        tempColor.current.lerp(duskFog.current, twilightFactor * 0.38);
+      }
+      if (stormW > 0.01 || fogW > 0.01) {
+        tempColor.current.lerp(stormFog.current, Math.max(stormW, fogW * 0.6) * 0.65);
       }
       if (nvStrength > 0.01) {
         tempColor.current.lerp(nvDarkFog.current, nvStrength * 0.9);
       }
+      if (flash > 0.01) {
+        tempColor.current.lerp(flashWhite.current, flash * 0.4);
+      }
       fogRef.current.color.copy(tempColor.current);
 
-      const normalNear = THREE.MathUtils.lerp(
-        LIGHTING_CONFIG.nightFogNear,
-        LIGHTING_CONFIG.dayFogNear,
-        dayFactor
-      );
-      const normalFar = THREE.MathUtils.lerp(
-        LIGHTING_CONFIG.nightFogFar,
-        LIGHTING_CONFIG.dayFogFar,
-        dayFactor
-      );
+      const weatherNearMult = 1 - fogW * 0.72;
+      const weatherFarMult = 1 - fogW * 0.68;
 
-      // Khi bật Night Vision: chỉ thấy rõ đúng trong bán kính nvRadius, ngoài bán kính mờ dần vào bóng tối
+      const normalNear =
+        THREE.MathUtils.lerp(LIGHTING_CONFIG.nightFogNear, LIGHTING_CONFIG.dayFogNear, dayFactor) *
+        weatherNearMult;
+      const normalFar =
+        THREE.MathUtils.lerp(LIGHTING_CONFIG.nightFogFar, LIGHTING_CONFIG.dayFogFar, dayFactor) *
+        weatherFarMult;
+
       const nvNear = nvRadius * 0.45;
       const nvFar = nvRadius * 1.15;
 
@@ -170,7 +235,6 @@ export const Lighting: React.FC = () => {
       fogRef.current.far = THREE.MathUtils.lerp(normalFar, nvFar, nvStrength);
     }
 
-    // Shadow camera bám sát nhân vật để bóng đổ ánh trăng & mặt trời luôn sắc nét
     lightTarget.position.set(px, py, pz);
     lightTarget.updateMatrixWorld();
 
@@ -183,27 +247,30 @@ export const Lighting: React.FC = () => {
           pz + sunZ * 0.48
         );
         dirLightRef.current.intensity =
-          0.9 + dayFactor * (LIGHTING_CONFIG.daySunIntensity - 0.9);
-        dirLightRef.current.color.set('#fffbeb');
+          (0.9 + dayFactor * (LIGHTING_CONFIG.daySunIntensity - 0.9)) * (1 - stormW * 0.55) +
+          flash * 2.5;
+        dirLightRef.current.color.set(flash > 0.2 ? '#e0f2fe' : '#ffedd5');
       } else {
-        // Ánh trăng bạc chiếu góc xiên rõ ràng -> hiện rõ vệt sáng trăng & bóng khủng long/cây/đá
         dirLightRef.current.position.set(
           px + moonX * 0.48,
           py + Math.max(42, Math.abs(moonY) * 0.65),
           pz + moonZ * 0.48
         );
         dirLightRef.current.intensity =
-          LIGHTING_CONFIG.nightMoonIntensity * (0.75 + nightFactor * 0.25) * (1 - nvStrength * 0.35);
-        dirLightRef.current.color.set('#b8d4ff');
+          LIGHTING_CONFIG.nightMoonIntensity *
+            (0.75 + nightFactor * 0.25) *
+            (1 - nvStrength * 0.35) *
+            (1 - stormW * 0.4) +
+          flash * 3.0;
+        dirLightRef.current.color.set(flash > 0.2 ? '#e0f2fe' : '#b8d4ff');
       }
     }
 
     if (moonFillRef.current) {
       moonFillRef.current.intensity =
-        LIGHTING_CONFIG.nightFill * nightFactor * (1 - nvStrength * 0.5);
+        LIGHTING_CONFIG.nightFill * nightFactor * (1 - nvStrength * 0.5) + flash * 0.6;
     }
 
-    // Đèn Night Vision chỉ chiếu rõ trong đúng bán kính nvRadius quanh khủng long
     if (nvLightRef.current) {
       const active = nvStrength > 0.02;
       nvLightRef.current.visible = active;
@@ -216,14 +283,17 @@ export const Lighting: React.FC = () => {
 
     if (ambientRef.current) {
       ambientRef.current.intensity =
-        THREE.MathUtils.lerp(LIGHTING_CONFIG.nightAmbient, LIGHTING_CONFIG.dayAmbient, dayFactor) +
-        LIGHTING_CONFIG.nvAmbientBonus * nvStrength;
-      ambientRef.current.color.set(nvStrength > 0.25 ? '#a7f3d0' : '#dbeafe');
+        THREE.MathUtils.lerp(LIGHTING_CONFIG.nightAmbient, LIGHTING_CONFIG.dayAmbient, dayFactor) *
+          (1 - stormW * 0.25) +
+        LIGHTING_CONFIG.nvAmbientBonus * nvStrength +
+        flash * 0.5;
+      ambientRef.current.color.set(nvStrength > 0.25 ? '#a7f3d0' : '#d8e6f3');
     }
 
     if (hemiRef.current) {
       hemiRef.current.intensity =
-        THREE.MathUtils.lerp(LIGHTING_CONFIG.nightHemi, LIGHTING_CONFIG.dayHemi, dayFactor) +
+        THREE.MathUtils.lerp(LIGHTING_CONFIG.nightHemi, LIGHTING_CONFIG.dayHemi, dayFactor) *
+          (1 - stormW * 0.28) +
         0.12 * nvStrength;
       hemiRef.current.color.copy(nightHemiSky.current).lerp(dayHemiSky.current, dayFactor);
       hemiRef.current.groundColor
@@ -234,16 +304,20 @@ export const Lighting: React.FC = () => {
 
   return (
     <>
-      <color ref={bgRef} attach="background" args={['#8fd3f4']} />
+      {hdrPath && (
+        <Suspense fallback={null}>
+          <Environment files={hdrPath} background={false} />
+        </Suspense>
+      )}
+      <color ref={bgRef} attach="background" args={['#749bb3']} />
       <Sky
         ref={skyRef}
         distance={1800}
         sunPosition={[100, 60, 50]}
-        rayleigh={0.55}
-        turbidity={4.5}
+        rayleigh={0.85}
+        turbidity={7.5}
       />
 
-      {/* Mặt Trăng sáng bạc có quầng sáng rõ trên bầu trời đêm */}
       <group ref={moonGroupRef} position={[-300, 260, -180]}>
         <mesh>
           <sphereGeometry args={[28, 24, 24]} />
@@ -265,16 +339,15 @@ export const Lighting: React.FC = () => {
         <Stars radius={520} depth={90} count={1800} factor={6} saturation={0} fade />
       </group>
 
-      <fog ref={fogRef} attach="fog" args={['#a8def5', 135, 520]} />
-      <ambientLight ref={ambientRef} intensity={0.85} color="#dbeafe" />
-      <hemisphereLight ref={hemiRef} args={['#f0f9ff', '#4a7c44', 1.0]} />
+      <fog ref={fogRef} attach="fog" args={['#86a5b5', 125, 460]} />
+      <ambientLight ref={ambientRef} intensity={0.72} color="#d8e6f3" />
+      <hemisphereLight ref={hemiRef} args={['#dce8f2', '#3b5936', 0.88]} />
 
-      {/* Đèn chính chiếu Mặt Trời ban ngày & Mặt Trăng ban đêm (tạo bóng đổ sắc nét) */}
       <directionalLight
         ref={dirLightRef}
         position={[70, 85, 45]}
-        intensity={2.35}
-        color="#fffbeb"
+        intensity={2.25}
+        color="#ffedd5"
         castShadow
         shadow-mapSize-width={1024}
         shadow-mapSize-height={1024}
@@ -287,7 +360,6 @@ export const Lighting: React.FC = () => {
         shadow-bias={-0.0004}
       />
 
-      {/* Đèn bù ánh trăng rất nhẹ để bóng đổ vẫn nổi bật */}
       <directionalLight
         ref={moonFillRef}
         position={[-60, 75, 60]}
@@ -295,7 +367,6 @@ export const Lighting: React.FC = () => {
         color="#93c5fd"
       />
 
-      {/* Đèn Night Vision giới hạn đúng bán kính quanh khủng long */}
       <pointLight
         ref={nvLightRef}
         visible={false}

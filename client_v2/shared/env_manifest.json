@@ -1,0 +1,10 @@
+{
+  "spruceTree": "models/env/spruce_tree.glb",
+  "pineSapling": "models/env/pine_sapling_small_1k.glb",
+  "fern": "models/env/fern_02_1k.glb",
+  "weed": "models/env/weed_plant_02_1k.glb",
+  "rockMossSet": "models/env/rock_moss_set_01_1k.glb",
+  "rockPittedMossy": "models/env/rock_pitted_mossy_1k.glb",
+  "groundDiffuse": "textures/ground/forrest_ground_01_diff_1k.jpg",
+  "rockDiffuse": "textures/rock/rock_pitted_mossy_diff_1k.jpg"
+}

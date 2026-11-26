@@ -1,0 +1,35 @@
+name: Build Dino Isle Native (Windows)
+
+on:
+  push:
+    paths:
+      - "client_v2/native/**"
+      - "client_v2/shared/**"
+      - ".github/workflows/build-windows.yml"
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo & Bevy target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "client_v2/native -> target"
+
+      - name: Build Release EXE
+        working-directory: client_v2/native
+        run: cargo build --release
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: dino-isle-native-windows
+          path: client_v2/native/target/release/dino-isle-native.exe
+          retention-days: 7

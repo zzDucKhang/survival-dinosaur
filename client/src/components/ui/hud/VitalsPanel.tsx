@@ -2,9 +2,11 @@ import React from 'react';
 import { useGameStore } from '../../../store/useGameStore';
 import { socket } from '../../../core/socket';
 import { soundEngine } from '../../../core/sound';
+import { getDinoSpec } from '../../../constants/dinosaurs';
 
 export const VitalsPanel: React.FC = () => {
   const myName = useGameStore((s) => s.myName);
+  const selectedModel = useGameStore((s) => s.selectedModel);
   const stamina = useGameStore((s) => s.stamina);
   const health = useGameStore((s) => s.health);
   const maxHealth = useGameStore((s) => s.maxHealth);
@@ -12,13 +14,19 @@ export const VitalsPanel: React.FC = () => {
   const thirst = useGameStore((s) => s.thirst);
   const growth = useGameStore((s) => s.growth);
   const bleed = useGameStore((s) => s.bleed);
+  const boneBreak = useGameStore((s) => s.boneBreak);
+  const specialCd = useGameStore((s) => s.specialCd);
   const isResting = useGameStore((s) => s.isResting);
   const restUnlockLeft = useGameStore((s) => s.restUnlockLeft);
   const combatTimerLeft = useGameStore((s) => s.combatTimerLeft);
   const regenRate = useGameStore((s) => s.regenRate);
   const isCrouching = useGameStore((s) => s.isCrouching);
+  const packId = useGameStore((s) => s.packId);
+  const packInviteFrom = useGameStore((s) => s.packInviteFrom);
+  const packInviteName = useGameStore((s) => s.packInviteName);
   const actionHint = useGameStore((s) => s.actionHint);
 
+  const dino = getDinoSpec(selectedModel);
   const hpPercent = Math.max(0, Math.min(100, (health / Math.max(1, maxHealth)) * 100));
   const growthPct = Math.round(growth * 100);
   const stageLabel =
@@ -31,6 +39,7 @@ export const VitalsPanel: React.FC = () => {
       : 'JUVENILE';
 
   const canExitRest = isResting && restUnlockLeft <= 0;
+  const canUseSpecial = !isResting && specialCd <= 0;
 
   const refocusCanvas = () => {
     const canvas = document.querySelector('canvas');
@@ -53,6 +62,13 @@ export const VitalsPanel: React.FC = () => {
     }
   };
 
+  const handleSpecialButtonClick = () => {
+    if (!canUseSpecial) return;
+    // Gửi sự kiện phím V để đồng bộ animation, dash (nếu có) và gói tin server giống hệt khi bấm phím
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyV', key: 'v', bubbles: true }));
+    refocusCanvas();
+  };
+
   return (
     <div
       style={{
@@ -67,15 +83,98 @@ export const VitalsPanel: React.FC = () => {
         pointerEvents: 'none',
       }}
     >
-      {/* Thanh trạng thái & nút Nghỉ ngơi / Hết nghỉ ngơi (khóa 3s) */}
+      {/* Thông báo Lời mời vào Bầy Đàn */}
+      {packInviteFrom && (
+        <div
+          style={{
+            pointerEvents: 'auto',
+            background: 'rgba(15, 23, 42, 0.96)',
+            border: '1px solid #38bdf8',
+            borderRadius: '10px',
+            padding: '8px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            fontSize: '12px',
+            boxShadow: '0 8px 24px rgba(56, 189, 248, 0.35)',
+          }}
+        >
+          <span>
+            🐾 <b style={{ color: '#7dd3fc' }}>{packInviteName || 'Người chơi'}</b> mời bạn vào Bầy Đàn!
+          </span>
+          <button
+            onClick={() => {
+              socket.sendPackAccept();
+              refocusCanvas();
+            }}
+            style={{
+              background: '#16a34a',
+              border: 'none',
+              color: '#fff',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: '800',
+              cursor: 'pointer',
+            }}
+          >
+            ✅ Đồng ý
+          </button>
+          <button
+            onClick={() => {
+              socket.sendPackLeave();
+              refocusCanvas();
+            }}
+            style={{
+              background: '#334155',
+              border: 'none',
+              color: '#cbd5e1',
+              padding: '4px 9px',
+              borderRadius: '6px',
+              fontSize: '11px',
+              fontWeight: '700',
+              cursor: 'pointer',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Hàng nút Kỹ năng [V] + Nghỉ ngơi [H] + Trạng thái Giao chiến / Hồi máu */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
           gap: '8px',
           pointerEvents: 'auto',
         }}
       >
+        <button
+          onClick={handleSpecialButtonClick}
+          disabled={!canUseSpecial}
+          title={dino.specialDesc}
+          style={{
+            background: canUseSpecial
+              ? 'linear-gradient(135deg, #d97706, #b45309)'
+              : 'rgba(30, 41, 59, 0.9)',
+            border: canUseSpecial ? '1px solid #fbbf24' : '1px solid rgba(148, 163, 184, 0.3)',
+            color: canUseSpecial ? '#fffbeb' : '#94a3b8',
+            padding: '6px 14px',
+            borderRadius: '999px',
+            fontSize: '12px',
+            fontWeight: '800',
+            cursor: canUseSpecial ? 'pointer' : 'not-allowed',
+            boxShadow: canUseSpecial ? '0 4px 14px rgba(245, 158, 11, 0.4)' : 'none',
+          }}
+        >
+          {specialCd > 0
+            ? `⏳ ${dino.specialName} (${specialCd.toFixed(1)}s)`
+            : `⚡ ${dino.specialName} [V]`}
+        </button>
+
         {!isResting ? (
           <button
             onClick={handleRestButtonClick}
@@ -130,7 +229,7 @@ export const VitalsPanel: React.FC = () => {
               fontWeight: '800',
             }}
           >
-            ⚔️ Đang giao chiến ({combatTimerLeft}s nữa hồi +5 HP/s)
+            ⚔️ Giao chiến ({combatTimerLeft}s nữa hồi +5 HP/s)
           </div>
         )}
 
@@ -147,7 +246,7 @@ export const VitalsPanel: React.FC = () => {
               boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
             }}
           >
-            💚 Đang hồi +{regenRate} HP/s
+            💚 Hồi +{regenRate} HP/s
           </div>
         )}
       </div>
@@ -168,13 +267,16 @@ export const VitalsPanel: React.FC = () => {
         </div>
       )}
 
+      {/* Bảng chỉ số sinh tồn */}
       <div
         style={{
-          width: '440px',
+          width: '450px',
           background: 'rgba(15, 23, 42, 0.88)',
           border:
             bleed > 0
               ? '1px solid #ef4444'
+              : boneBreak > 0
+              ? '1px solid #fb923c'
               : isResting
               ? '1px solid #38bdf8'
               : isCrouching
@@ -195,6 +297,20 @@ export const VitalsPanel: React.FC = () => {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             <span style={{ fontWeight: '700', fontSize: '14px', color: '#f8fafc' }}>{myName}</span>
+            {packId && (
+              <span
+                style={{
+                  background: '#0369a1',
+                  color: '#e0f2fe',
+                  fontSize: '10px',
+                  fontWeight: '800',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                }}
+              >
+                🐾 BẦY ĐÀN
+              </span>
+            )}
             {isResting && (
               <span
                 style={{
@@ -223,6 +339,20 @@ export const VitalsPanel: React.FC = () => {
                 🐾 ẨN NẤP [C]
               </span>
             )}
+            {boneBreak > 0 && (
+              <span
+                style={{
+                  background: '#ea580c',
+                  color: '#fff',
+                  fontSize: '10px',
+                  fontWeight: '800',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                }}
+              >
+                🦴 GÃY XƯƠNG {boneBreak}s
+              </span>
+            )}
             {bleed > 0 && (
               <span
                 style={{
@@ -246,9 +376,7 @@ export const VitalsPanel: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '8px' }}>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: '700', color: '#f87171', marginBottom: '3px' }}>
-              <span>
-                ❤️ MÁU {regenRate > 0 ? `(+${regenRate}/s)` : ''}
-              </span>
+              <span>❤️ MÁU {regenRate > 0 ? `(+${regenRate}/s)` : ''}</span>
               <span>
                 {Math.round(health)}/{maxHealth}
               </span>

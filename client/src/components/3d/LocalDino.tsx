@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { socket } from '../../core/socket';
+import { soundEngine } from '../../core/sound';
 import {
   useGameStore,
   localTransformMutable,
@@ -31,6 +32,7 @@ export const LocalDino: React.FC = () => {
   const growth = useGameStore((s) => s.growth);
   const isResting = useGameStore((s) => s.isResting);
   const isCrouching = useGameStore((s) => s.isCrouching);
+  const boneBreak = useGameStore((s) => s.boneBreak);
   const setStamina = useGameStore((s) => s.setStamina);
   const setActionHint = useGameStore((s) => s.setActionHint);
 
@@ -62,6 +64,15 @@ export const LocalDino: React.FC = () => {
     calibrateAfterRender,
   } = useDinoModel(dino.modelPath, dino.targetSize, dino.rotationOffset);
 
+  const position = useRef(new THREE.Vector3(0, getEntityGroundHeight(0, 0), 0));
+  const rotationY = useRef(0);
+  const staminaRef = useRef(100);
+  const lastSyncTime = useRef(0);
+  const lastHintCheck = useRef(0);
+  const lastRespawnSeqRef = useRef(0);
+  const postureBlendRef = useRef(0);
+  const crouchBlendRef = useRef(0);
+
   const keysRefForCallback = useRef({
     forward: false,
     backward: false,
@@ -90,23 +101,38 @@ export const LocalDino: React.FC = () => {
     [playAnim]
   );
 
+  const handleTriggerSpecial = useCallback(() => {
+    const st = useGameStore.getState();
+    if (st.isResting || st.specialCd > 0) return;
+    const modelId = dino.id.toLowerCase();
+    handleOneShot(modelId === 'stego' ? 'tail' : 'bite');
+    socket.sendSpecial();
+    soundEngine.playSpecial();
+
+    // Lướt tiến tức thì cho các loài sát thủ nhanh nhẹn (khớp dash 10m của server)
+    if (
+      modelId !== 'trex' &&
+      modelId !== 't-rex' &&
+      modelId !== 'tricera' &&
+      modelId !== 'mammoth' &&
+      modelId !== 'stego'
+    ) {
+      const fx = Math.sin(rotationY.current);
+      const fz = Math.cos(rotationY.current);
+      position.current.x = Math.max(-ISLAND_LIMIT, Math.min(ISLAND_LIMIT, position.current.x + fx * 10));
+      position.current.z = Math.max(-ISLAND_LIMIT, Math.min(ISLAND_LIMIT, position.current.z + fz * 10));
+    }
+  }, [dino.id, handleOneShot]);
+
   const { keys, isRightMouseDown, cameraYaw, cameraPitch, zoomDistance } = useDinoControls({
     defaultCamDistance: dino.camDistance,
     onTriggerOneShot: handleOneShot,
+    onTriggerSpecial: handleTriggerSpecial,
   });
 
   useEffect(() => {
     keysRefForCallback.current = keys.current;
   }, [keys]);
-
-  const position = useRef(new THREE.Vector3(0, getEntityGroundHeight(0, 0), 0));
-  const rotationY = useRef(0);
-  const staminaRef = useRef(100);
-  const lastSyncTime = useRef(0);
-  const lastHintCheck = useRef(0);
-  const lastRespawnSeqRef = useRef(0);
-  const postureBlendRef = useRef(0); // 0 = đứng, 1 = nằm nghỉ
-  const crouchBlendRef = useRef(0); // 0 = đứng, 1 = rón rén
 
   const tempCamOffset = useMemo(() => new THREE.Vector3(), []);
   const tempTargetCamPos = useMemo(() => new THREE.Vector3(), []);
@@ -118,7 +144,7 @@ export const LocalDino: React.FC = () => {
     const now = performance.now();
     const storeState = useGameStore.getState();
 
-    // 1. Đồng bộ vị trí hồi sinh chuẩn 100% khi chết (kể cả chết gần tâm bản đồ)
+    // 1. Đồng bộ hồi sinh & phản hồi bị húc văng từ server
     if (myId && playersMutable[myId]) {
       const serverMe = playersMutable[myId];
       const serverSeq = serverMe.respawnSeq || 0;
@@ -126,6 +152,7 @@ export const LocalDino: React.FC = () => {
         serverMe.x - position.current.x,
         serverMe.z - position.current.z
       );
+      const recentlyHit = now - storeState.lastDamagedAt < 500;
       if (serverSeq > lastRespawnSeqRef.current || serverDist > 26) {
         lastRespawnSeqRef.current = serverSeq;
         position.current.set(
@@ -133,38 +160,37 @@ export const LocalDino: React.FC = () => {
           getEntityGroundHeight(serverMe.x, serverMe.z),
           serverMe.z
         );
+      } else if (recentlyHit && serverDist > 4.2) {
+        position.current.x = THREE.MathUtils.lerp(position.current.x, serverMe.x, Math.min(1, delta * 14));
+        position.current.z = THREE.MathUtils.lerp(position.current.z, serverMe.z, Math.min(1, delta * 14));
       }
     }
 
     calibrateAfterRender(group.current, modelHolderRef.current);
 
-    // 2. Cập nhật kích thước tăng trưởng + chuyển đổi tư thế nằm nghỉ / rón rén
+    // 2. Kích thước tăng trưởng + tư thế nằm nghỉ / rón rén
     const liveGrowth = storeState.growth;
     const liveScaleMult = storeState.dinoScaleMultiplier;
     const growthVisual = calcGrowthVisualScale(liveGrowth);
     const totalMultiplier = growthVisual * liveScaleMult;
 
-    const targetRestBlend = storeState.isResting ? 1 : 0;
-    const targetCrouchBlend = !storeState.isResting && storeState.isCrouching ? 1 : 0;
     postureBlendRef.current = THREE.MathUtils.lerp(
       postureBlendRef.current,
-      targetRestBlend,
+      storeState.isResting ? 1 : 0,
       Math.min(1, delta * 7)
     );
     crouchBlendRef.current = THREE.MathUtils.lerp(
       crouchBlendRef.current,
-      targetCrouchBlend,
+      !storeState.isResting && storeState.isCrouching ? 1 : 0,
       Math.min(1, delta * 9)
     );
 
     const restFactor = postureBlendRef.current;
     const crouchFactor = crouchBlendRef.current;
-
     const baseScale = baseScaleRef.current * totalMultiplier;
-    // Khi nằm nghỉ hạ thấp dáng & nén nhẹ chiều cao để rõ tư thế nằm kể cả model không có clip sleep
     const scaleYMult = 1 - restFactor * 0.24 - crouchFactor * 0.12;
-    modelHolderRef.current.scale.set(baseScale, baseScale * scaleYMult, baseScale);
 
+    modelHolderRef.current.scale.set(baseScale, baseScale * scaleYMult, baseScale);
     const postureDropY = (restFactor * 0.36 + crouchFactor * 0.16) * totalMultiplier;
     modelHolderRef.current.position.set(
       0,
@@ -182,7 +208,7 @@ export const LocalDino: React.FC = () => {
         dino.nametagHeight * totalMultiplier * (1 - restFactor * 0.28 - crouchFactor * 0.12);
     }
 
-    // 3. Khóa hoàn toàn input di chuyển khi đang nghỉ ngơi
+    // 3. Khóa hoàn toàn input khi đang nghỉ ngơi
     if (storeState.isResting) {
       keys.current.forward = false;
       keys.current.backward = false;
@@ -213,9 +239,11 @@ export const LocalDino: React.FC = () => {
     const isTurning = isTurningLeft || isTurningRight;
     const isMoving = isMovingForward || isMovingBackward;
 
+    const hasBoneBreak = storeState.boneBreak > 0;
     const isSprinting =
       !storeState.isResting &&
       !storeState.isCrouching &&
+      !hasBoneBreak &&
       keys.current.sprint &&
       (isMovingForward || isTurning) &&
       staminaRef.current > 5;
@@ -231,7 +259,9 @@ export const LocalDino: React.FC = () => {
     setStamina(staminaRef.current);
 
     if (!storeState.isResting) {
-      const effectiveTurnSpeed = isQuadrupedRef.current ? dino.turnSpeed * 0.78 : dino.turnSpeed;
+      const boneMult = hasBoneBreak ? 0.45 : 1.0;
+      const effectiveTurnSpeed =
+        (isQuadrupedRef.current ? dino.turnSpeed * 0.78 : dino.turnSpeed) * (hasBoneBreak ? 0.7 : 1.0);
       const turnDir = isMovingBackward ? -1 : 1;
       if (isTurningLeft) rotationY.current += effectiveTurnSpeed * delta * turnDir;
       if (isTurningRight) rotationY.current -= effectiveTurnSpeed * delta * turnDir;
@@ -242,22 +272,29 @@ export const LocalDino: React.FC = () => {
       const crouchSpeedMult = storeState.isCrouching ? 0.55 : 1.0;
 
       if (isMovingForward) {
-        const speed = (isSprinting ? dino.sprintSpeed : dino.walkSpeed) * agilityBoost * crouchSpeedMult;
+        const speed =
+          (isSprinting ? dino.sprintSpeed : dino.walkSpeed) *
+          agilityBoost *
+          crouchSpeedMult *
+          boneMult;
         position.current.x += forwardX * speed * delta;
         position.current.z += forwardZ * speed * delta;
       } else if (isMovingBackward) {
-        position.current.x -= forwardX * dino.backSpeed * crouchSpeedMult * delta;
-        position.current.z -= forwardZ * dino.backSpeed * crouchSpeedMult * delta;
+        position.current.x -= forwardX * dino.backSpeed * crouchSpeedMult * boneMult * delta;
+        position.current.z -= forwardZ * dino.backSpeed * crouchSpeedMult * boneMult * delta;
       } else if (isTurning) {
         const arcFactor = isQuadrupedRef.current ? 0.75 : 0.6;
         const turnWalkSpeed =
-          (isSprinting ? dino.sprintSpeed : dino.walkSpeed) * arcFactor * crouchSpeedMult;
+          (isSprinting ? dino.sprintSpeed : dino.walkSpeed) *
+          arcFactor *
+          crouchSpeedMult *
+          boneMult;
         position.current.x += forwardX * turnWalkSpeed * delta;
         position.current.z += forwardZ * turnWalkSpeed * delta;
       }
     }
 
-    // 4. Va chạm tảng đá & bám sát mặt lưới địa hình (kể cả vùng trũng sâu)
+    // 4. Va chạm đá & bám sát mặt địa hình trũng/dốc
     const myRadius = 1.45 * totalMultiplier;
     for (let i = 0; i < WORLD_ROCKS.length; i++) {
       const rock = WORLD_ROCKS[i];
@@ -274,15 +311,11 @@ export const LocalDino: React.FC = () => {
 
     position.current.x = Math.max(-ISLAND_LIMIT, Math.min(ISLAND_LIMIT, position.current.x));
     position.current.z = Math.max(-ISLAND_LIMIT, Math.min(ISLAND_LIMIT, position.current.z));
-
-    const groundY = getEntityGroundHeight(position.current.x, position.current.z);
-    // Bám sát trực tiếp mặt tam giác địa hình -> không bao giờ lơ lửng khi đi xuống hố trũng
-    position.current.y = groundY;
+    position.current.y = getEntityGroundHeight(position.current.x, position.current.z);
 
     group.current.position.copy(position.current);
     group.current.rotation.y = rotationY.current;
 
-    // Nghiêng thân mượt theo độ dốc địa hình + tư thế rón rén
     const slope = getTerrainSlope(
       position.current.x,
       position.current.z,
@@ -306,7 +339,7 @@ export const LocalDino: React.FC = () => {
     localTransformMutable.z = position.current.z;
     localTransformMutable.rot = rotationY.current;
 
-    // 5. Gợi ý hành động (ẩn khi đang nghỉ ngơi)
+    // 5. Gợi ý hành động
     if (now - lastHintCheck.current > 250) {
       lastHintCheck.current = now;
       let hint: string | null = null;
@@ -335,7 +368,7 @@ export const LocalDino: React.FC = () => {
       setActionHint(hint);
     }
 
-    // 6. Điều khiển Animation
+    // 6. Animation
     if (storeState.isResting) {
       isOneShotPlayingRef.current = false;
       if (activeAnimRef.current !== 'rest') {
@@ -353,7 +386,9 @@ export const LocalDino: React.FC = () => {
         playAnim(targetAnim, false);
       }
       if (activeActionObjRef.current && (targetAnim === 'walk' || targetAnim === 'run')) {
-        if (storeState.isCrouching) {
+        if (hasBoneBreak) {
+          activeActionObjRef.current.timeScale = 0.52;
+        } else if (storeState.isCrouching) {
           activeActionObjRef.current.timeScale = 0.65;
         } else if (isMovingBackward) {
           activeActionObjRef.current.timeScale = 0.8;
@@ -367,7 +402,7 @@ export const LocalDino: React.FC = () => {
       }
     }
 
-    // 7. Đồng bộ mạng 20Hz (khi nghỉ ngơi không gửi gói di chuyển để tránh xung đột)
+    // 7. Đồng bộ mạng 20Hz
     if (!storeState.isResting && now - lastSyncTime.current > 50) {
       lastSyncTime.current = now;
       socket.sendMove(
@@ -379,7 +414,7 @@ export const LocalDino: React.FC = () => {
       );
     }
 
-    // 8. Camera xoay 360° & luôn giữ cao hơn mặt địa hình
+    // 8. Camera xoay 360°
     if (isMovingForward && !isTurning && !isRightMouseDown.current) {
       let diff = (rotationY.current - cameraYaw.current) % (Math.PI * 2);
       if (diff > Math.PI) diff -= Math.PI * 2;
@@ -449,11 +484,14 @@ export const LocalDino: React.FC = () => {
             <div
               style={{
                 background: 'rgba(15, 23, 42, 0.88)',
-                border: isResting
-                  ? '1px solid #38bdf8'
-                  : isCrouching
-                  ? '1px solid #facc15'
-                  : '1px solid #10b981',
+                border:
+                  boneBreak > 0
+                    ? '1px solid #fb923c'
+                    : isResting
+                    ? '1px solid #38bdf8'
+                    : isCrouching
+                    ? '1px solid #facc15'
+                    : '1px solid #10b981',
                 borderRadius: '6px',
                 padding: '3px 10px',
                 color: '#34d399',
@@ -465,7 +503,7 @@ export const LocalDino: React.FC = () => {
                 boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
               }}
             >
-              {isResting ? '💤 ' : isCrouching ? '🐾 ' : ''}
+              {boneBreak > 0 ? '🦴 ' : isResting ? '💤 ' : isCrouching ? '🐾 ' : ''}
               {myName}{' '}
               <span style={{ color: '#fde047', fontSize: '10px' }}>
                 {Math.round(growth * 100)}%

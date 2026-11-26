@@ -39,6 +39,7 @@ export const RadarMinimap: React.FC = () => {
             const mapScale = radarRadius / 240;
             const meX = localTransformMutable.x;
             const meZ = localTransformMutable.z;
+            const st = useGameStore.getState();
 
             ctx.clearRect(0, 0, w, h);
             ctx.save();
@@ -55,7 +56,7 @@ export const RadarMinimap: React.FC = () => {
             const drawLake = (lx: number, lz: number, r: number) => {
               const sx = cx + (lx - meX) * mapScale;
               const sz = cy + (lz - meZ) * mapScale;
-              ctx.fillStyle = 'rgba(14, 165, 233, 0.6)';
+              ctx.fillStyle = 'rgba(14, 165, 233, 0.55)';
               ctx.beginPath();
               ctx.arc(sx, sz, Math.max(4, r * mapScale), 0, Math.PI * 2);
               ctx.fill();
@@ -78,22 +79,35 @@ export const RadarMinimap: React.FC = () => {
               if (!p) continue;
               const px = cx + (p.x - meX) * mapScale;
               const pz = cy + (p.z - meZ) * mapScale;
+              const isPackmate = Boolean(!p.isAi && st.packId && p.packId === st.packId);
               const isHunting = p.aiState === 'CHASE' || p.aiState === 'ATTACK';
-              ctx.fillStyle = isHunting
+              ctx.fillStyle = isPackmate
+                ? '#38bdf8'
+                : isHunting
                 ? '#f97316'
                 : p.diet === 'herbivore'
                 ? '#34d399'
                 : p.isAi
                 ? '#818cf8'
                 : '#ef4444';
-              const dotSize =
-                p.growth && p.growth > 1.1 ? 4.8 : p.growth && p.growth < 0.55 ? 2.6 : 3.6;
+              const dotSize = isPackmate
+                ? 4.6
+                : p.growth && p.growth > 1.1
+                ? 4.8
+                : p.growth && p.growth < 0.55
+                ? 2.6
+                : 3.6;
               ctx.beginPath();
               ctx.arc(px, pz, dotSize, 0, Math.PI * 2);
               ctx.fill();
+              if (isPackmate) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+              }
             }
 
-            const wp = useGameStore.getState().mapWaypoint;
+            const wp = st.mapWaypoint;
             if (wp) {
               let dx = (wp.x - meX) * mapScale;
               let dz = (wp.z - meZ) * mapScale;
@@ -189,7 +203,7 @@ export const RadarMinimap: React.FC = () => {
       <div style={{ fontSize: '9px', color: mapWaypoint ? '#fde047' : '#94a3b8' }}>
         {mapWaypoint
           ? `📍 Đang ghim (${mapWaypoint.x}, ${mapWaypoint.z})`
-          : '🟡 Bạn • 🟢 Ăn cỏ • 🟣 Ăn thịt • 🔵 Hồ'}
+          : '🟡 Bạn • 🩵 Bầy • 🟢 Cỏ • 🟣 Thịt'}
       </div>
     </div>
   );

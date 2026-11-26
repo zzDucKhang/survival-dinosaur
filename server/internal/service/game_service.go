@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -114,6 +115,8 @@ func (s *GameService) AddPlayer(p *models.Player) {
 	p.CombatTimerLeft = 0
 	p.RegenRate = 0
 	p.IsCrouching = false
+	p.BoneBreakTimer = 0
+	p.SpecialCDLeft = 0
 	p.Y = world.GetEntityGroundHeight(p.X, p.Z)
 	s.repo.Players[p.ID] = p
 
@@ -149,7 +152,6 @@ func (s *GameService) UpdatePlayerMove(id string, x, _ float64, z, rot float64, 
 	defer s.repo.Unlock()
 
 	if p, exists := s.repo.Players[id]; exists {
-		// Khóa tuyệt đối di chuyển khi đang nghỉ ngơi (không tự tắt nghỉ ngơi)
 		if p.IsResting {
 			p.AnimState = "rest"
 			return
@@ -184,14 +186,164 @@ func (s *GameService) AddChatMessage(sender, text string, isSystem bool) {
 	})
 }
 
-func (s *GameService) GetFullSnapshot() (map[string]*models.Player, map[string]*models.WorldFood, float64) {
+// ==========================================
+// HỆ THỐNG BẦY ĐÀN (PACK / HERD)
+// ==========================================
+func (s *GameService) InviteToPack(inviterID, targetID string) {
+	s.repo.Lock()
+	defer s.repo.Unlock()
+
+	if inviterID == targetID {
+		return
+	}
+	inviter, ok1 := s.repo.Players[inviterID]
+	target, ok2 := s.repo.Players[targetID]
+	if !ok1 || !ok2 || target.IsAI {
+		return
+	}
+	// Chỉ cho ghép bầy đàn cùng hệ ăn thịt hoặc cùng hệ ăn cỏ
+	if inviter.Diet != target.Diet {
+		return
+	}
+	if inviter.PackID == "" {
+		inviter.PackID = fmt.Sprintf("pack-%s", inviter.ID[:8])
+	}
+	target.PackInviteFrom = inviter.ID
+	target.PackInviteName = inviter.Name
+
+	s.repo.PendingChats = append(s.repo.PendingChats, models.ChatMessage{
+		ID:        fmt.Sprintf("pack-inv-%d", time.Now().UnixNano()),
+		Sender:    "ISLE",
+		Text:      fmt.Sprintf("🐾 %s đã mời %s gia nhập Bầy Đàn!", inviter.Name, target.Name),
+		IsSystem:  true,
+		Timestamp: time.Now().UnixMilli(),
+	})
+}
+
+func (s *GameService) AcceptPackInvite(playerID string) {
+	s.repo.Lock()
+	defer s.repo.Unlock()
+
+	p, ok := s.repo.Players[playerID]
+	if !ok || p.PackInviteFrom == "" {
+		return
+	}
+	inviter, okInv := s.repo.Players[p.PackInviteFrom]
+	if !okInv || inviter.Diet != p.Diet {
+		p.PackInviteFrom = ""
+		p.PackInviteName = ""
+		return
+	}
+	if inviter.PackID == "" {
+		inviter.PackID = fmt.Sprintf("pack-%s", inviter.ID[:8])
+	}
+	p.PackID = inviter.PackID
+	p.PackInviteFrom = ""
+	p.PackInviteName = ""
+
+	s.repo.PendingChats = append(s.repo.PendingChats, models.ChatMessage{
+		ID:        fmt.Sprintf("pack-acc-%d", time.Now().UnixNano()),
+		Sender:    "ISLE",
+		Text:      fmt.Sprintf("🤝 %s đã gia nhập Bầy Đàn cùng %s!", p.Name, inviter.Name),
+		IsSystem:  true,
+		Timestamp: time.Now().UnixMilli(),
+	})
+}
+
+func (s *GameService) LeavePack(playerID string) {
+	s.repo.Lock()
+	defer s.repo.Unlock()
+
+	p, ok := s.repo.Players[playerID]
+	if !ok {
+		return
+	}
+	p.PackInviteFrom = ""
+	p.PackInviteName = ""
+	if p.PackID != "" {
+		p.PackID = ""
+		s.repo.PendingChats = append(s.repo.PendingChats, models.ChatMessage{
+			ID:        fmt.Sprintf("pack-lv-%d", time.Now().UnixNano()),
+			Sender:    "ISLE",
+			Text:      fmt.Sprintf("🐾 %s đã rời khỏi Bầy Đàn.", p.Name),
+			IsSystem:  true,
+			Timestamp: time.Now().UnixMilli(),
+		})
+	}
+}
+
+func (s *GameService) stepWeatherLocked(dt float64) {
+	s.repo.WeatherTimer -= dt
+	if s.repo.WeatherTimer > 0 {
+		return
+	}
+
+	prev := s.repo.Weather
+	r := rand.Float64()
+	switch prev {
+	case models.WeatherClear:
+		if r < 0.55 {
+			s.repo.Weather = models.WeatherFog
+			s.repo.WeatherTimer = 65 + rand.Float64()*40
+		} else {
+			s.repo.Weather = models.WeatherRain
+			s.repo.WeatherTimer = 70 + rand.Float64()*45
+		}
+	case models.WeatherFog:
+		if r < 0.5 {
+			s.repo.Weather = models.WeatherRain
+			s.repo.WeatherTimer = 70 + rand.Float64()*45
+		} else {
+			s.repo.Weather = models.WeatherClear
+			s.repo.WeatherTimer = 95 + rand.Float64()*50
+		}
+	case models.WeatherRain:
+		if r < 0.42 {
+			s.repo.Weather = models.WeatherStorm
+			s.repo.WeatherTimer = 55 + rand.Float64()*35
+		} else {
+			s.repo.Weather = models.WeatherClear
+			s.repo.WeatherTimer = 95 + rand.Float64()*55
+		}
+	default:
+		s.repo.Weather = models.WeatherFog
+		s.repo.WeatherTimer = 55 + rand.Float64()*35
+	}
+
+	if s.repo.Weather != prev {
+		msg := "☀️ Bầu trời đã quang đãng trở lại."
+		switch s.repo.Weather {
+		case models.WeatherFog:
+			msg = "🌫️ Sương mù dày đặc đang bao phủ khu rừng..."
+		case models.WeatherRain:
+			msg = "🌧️ Trời bắt đầu đổ mưa rào (giảm tụt khát)."
+		case models.WeatherStorm:
+			msg = "⛈️ Bão giông tiền sử kéo đến kèm sấm chớp!"
+		}
+		s.repo.PendingChats = append(s.repo.PendingChats, models.ChatMessage{
+			ID:        fmt.Sprintf("weather-%d", time.Now().UnixNano()),
+			Sender:    "ISLE",
+			Text:      msg,
+			IsSystem:  true,
+			Timestamp: time.Now().UnixMilli(),
+		})
+	}
+}
+
+func (s *GameService) GetFullSnapshot() (
+	map[string]*models.Player,
+	map[string]*models.WorldFood,
+	[]models.BloodTrail,
+	float64,
+	string,
+) {
 	return s.repo.GetFullSnapshot()
 }
 
 func (s *GameService) StartGameLoop(hub Broadcaster) {
 	ticker := time.NewTicker(50 * time.Millisecond) // 20 Hz
 	lastTime := time.Now()
-	log.Println("[GameService] 20Hz loop started (Delta Sync + AI + Survival + Combat)")
+	log.Println("[GameService] 20Hz loop started (Weather + Skills + BoneBreak + Pack + BloodTrails)")
 
 	go func() {
 		defer ticker.Stop()
@@ -212,6 +364,7 @@ func (s *GameService) StartGameLoop(hub Broadcaster) {
 				s.repo.WorldTime -= 1.0
 			}
 
+			s.stepWeatherLocked(dt)
 			s.stepSurvivalLocked(dt)
 
 			aiEvents, aiChats, aiFoodsChanged := ai.StepBots(s.repo.Players, s.repo.Foods, dt)
@@ -226,25 +379,26 @@ func (s *GameService) StartGameLoop(hub Broadcaster) {
 			}
 
 			if !hasClients {
-				// Không có người chơi: xả hàng đợi sự kiện & bỏ qua json.Marshal để tiết kiệm CPU
 				s.repo.PendingCombatEvents = s.repo.PendingCombatEvents[:0]
 				s.repo.PendingChats = s.repo.PendingChats[:0]
 				s.repo.Unlock()
 				continue
 			}
 
-			// Đồng bộ lại toàn bộ foods mỗi 5 giây (100 tick) hoặc ngay lập tức khi có thay đổi
-			forceFoods := s.tickCount%100 == 0
-			playersSnap, foodsSnap, events, chats, worldTime := s.repo.FlushTickSnapshotLocked(forceFoods)
+			forceAux := s.tickCount%100 == 0
+			playersSnap, foodsSnap, bloodSnap, events, chats, worldTime, weather :=
+				s.repo.FlushTickSnapshotLocked(forceAux)
 			s.repo.Unlock()
 
 			syncMsg := models.OutboundMessage{
-				Type:      "SYNC",
-				Players:   playersSnap,
-				Foods:     foodsSnap,
-				Events:    events,
-				Chats:     chats,
-				WorldTime: worldTime,
+				Type:        "SYNC",
+				Players:     playersSnap,
+				Foods:       foodsSnap,
+				BloodTrails: bloodSnap,
+				Events:      events,
+				Chats:       chats,
+				WorldTime:   worldTime,
+				Weather:     weather,
 			}
 			payload, err := json.Marshal(syncMsg)
 			if err != nil {

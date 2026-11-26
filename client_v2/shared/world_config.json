@@ -1,0 +1,14 @@
+{
+  "oasisX": 60.0,
+  "oasisZ": -60.0,
+  "oasisRadius": 26.0,
+  "highlandLakeX": -160.0,
+  "highlandLakeZ": 140.0,
+  "highlandLakeRadius": 32.0,
+  "islandLimit": 450.0,
+  "waterLevel": -0.35,
+  "terrainSize": 1200.0,
+  "terrainSegments": 128,
+  "rockCount": 140,
+  "initialPlantCount": 24
+}

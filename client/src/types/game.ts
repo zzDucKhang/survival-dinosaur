@@ -2,6 +2,7 @@ export type DinoModelType = string;
 export type DietType = 'carnivore' | 'herbivore';
 export type AnimState = 'idle' | 'walk' | 'run' | 'bite' | 'roar' | 'tail' | 'rest';
 export type GraphicsQuality = 'low' | 'medium' | 'high';
+export type WeatherType = 'clear' | 'fog' | 'rain' | 'storm';
 
 export interface PlayerData {
   id: string;
@@ -19,12 +20,17 @@ export interface PlayerData {
   thirst?: number;
   growth?: number;
   bleed?: number;
+  boneBreak?: number;
+  specialCd?: number;
   kills?: number;
   isResting?: boolean;
   restUnlockLeft?: number;
   combatTimerLeft?: number;
   regenRate?: number;
   isCrouching?: boolean;
+  packId?: string;
+  packInviteFrom?: string;
+  packInviteName?: string;
   respawnSeq?: number;
   lastKilledBy?: string;
   isAi?: boolean;
@@ -38,6 +44,12 @@ export interface FoodItem {
   z: number;
   amount: number;
   maxAmount: number;
+}
+
+export interface BloodTrail {
+  id: string;
+  x: number;
+  z: number;
 }
 
 export interface CombatEvent {

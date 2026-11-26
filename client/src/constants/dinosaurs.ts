@@ -9,6 +9,9 @@ export interface DinoSpec {
   fileName: string;
   badge: string;
   description: string;
+  specialName: string;
+  specialDesc: string;
+  specialCooldown: number;
   icon: string;
   modelPath: string;
   targetSize: number;
@@ -23,10 +26,8 @@ export interface DinoSpec {
   backSpeed: number;
 }
 
-
-
-const discoveredGlbFiles = import.meta.glob('/public/models/*.glb');
-const discoveredJsonConfigs = import.meta.glob('/public/models/*.json', {
+const discoveredGlbFiles = import.meta.glob('/public/models/dino/*.glb');
+const discoveredJsonConfigs = import.meta.glob('/public/models/dino/*.json', {
   eager: true,
   import: 'default',
 }) as Record<string, Partial<DinoSpec>>;
@@ -38,6 +39,9 @@ const PRESET_SPECS: Record<string, Partial<DinoSpec>> = {
     diet: 'carnivore',
     badge: 'ĂN THỊT',
     description: 'Bạo chúa đỉnh chuỗi thức ăn (150 HP), cú cắn gây chảy máu nặng.',
+    specialName: 'Ngoạm Nghiền Xương',
+    specialDesc: 'Gây sát thương lớn + Gãy xương 6s (giảm tốc & khóa chạy nhanh)',
+    specialCooldown: 12,
     icon: '🦖',
     targetSize: 4.4,
     rotationOffset: 0,
@@ -56,6 +60,9 @@ const PRESET_SPECS: Record<string, Partial<DinoSpec>> = {
     diet: 'carnivore',
     badge: 'ĂN THỊT',
     description: 'Săn mồi cân bằng giữa tốc độ và sức cắn (135 HP).',
+    specialName: 'Ngoạm Nghiền Xương',
+    specialDesc: 'Cắn xuyên giáp gây Gãy xương 6s & Chảy máu',
+    specialCooldown: 12,
     icon: '🦖',
     targetSize: 4.0,
     rotationOffset: 0,
@@ -74,6 +81,9 @@ const PRESET_SPECS: Record<string, Partial<DinoSpec>> = {
     diet: 'carnivore',
     badge: 'TỐC ĐỘ CAO',
     description: 'Sát thủ tốc độ cao (110 HP), rẽ ngoặt nhanh, săn mồi cực nhạy.',
+    specialName: 'Vồ Săn Mồi',
+    specialDesc: 'Lướt tiến 10m chớp nhoáng + cào gây chảy máu 7.5s',
+    specialCooldown: 8,
     icon: '🦎',
     targetSize: 3.1,
     rotationOffset: -Math.PI / 2,
@@ -92,6 +102,9 @@ const PRESET_SPECS: Record<string, Partial<DinoSpec>> = {
     diet: 'herbivore',
     badge: 'ĂN CỎ • TANK',
     description: 'Khủng long 3 sừng giáp dày (175 HP), húc văng kẻ săn mồi.',
+    specialName: 'Húc Tam Sừng',
+    specialDesc: 'Húc văng kẻ địch ra xa + Gãy xương 4.5s',
+    specialCooldown: 10,
     icon: '🦕',
     targetSize: 4.2,
     nametagHeight: 3.0,
@@ -109,6 +122,9 @@ const PRESET_SPECS: Record<string, Partial<DinoSpec>> = {
     diet: 'herbivore',
     badge: 'ĂN CỎ • GAI ĐUÔI',
     description: 'Giáp lưng gai sắc bén (165 HP), quất đuôi (E) sát thương diện rộng.',
+    specialName: 'Quất Gai 360°',
+    specialDesc: 'Quét gai đuôi xung quanh gây siêu chảy máu 10s',
+    specialCooldown: 9,
     icon: '🦕',
     targetSize: 4.3,
     nametagHeight: 3.1,
@@ -126,6 +142,9 @@ const PRESET_SPECS: Record<string, Partial<DinoSpec>> = {
     diet: 'herbivore',
     badge: 'ĂN CỎ • KHỔNG LỒ',
     description: 'Voi ma mút tiền sử siêu trâu (210 HP), đầm chắc và mạnh mẽ.',
+    specialName: 'Giẫm Chấn Động',
+    specialDesc: 'Chấn động 360° hất văng mọi kẻ thù + Gãy xương 4.5s',
+    specialCooldown: 10,
     icon: '🦣',
     targetSize: 4.8,
     nametagHeight: 3.6,
@@ -143,6 +162,9 @@ const PRESET_SPECS: Record<string, Partial<DinoSpec>> = {
     diet: 'carnivore',
     badge: 'ĂN THỊT',
     description: 'Dã thú săn mồi hung tợn (130 HP), tốc độ vồ mồi chớp nhoáng.',
+    specialName: 'Vồ Săn Mồi',
+    specialDesc: 'Lao tiến 10m vồ mồi + gây chảy máu nặng 7.5s',
+    specialCooldown: 8,
     icon: '🦖',
     targetSize: 3.9,
     nametagHeight: 3.0,
@@ -179,9 +201,12 @@ function createDefaultSpec(id: string, fileName: string): DinoSpec {
     diet: 'carnivore',
     fileName,
     badge: 'LOÀI MỚI',
-    description: `Mô hình khủng long tự động nạp từ public/models/${fileName}.`,
+    description: `Mô hình khủng long tự động nạp từ public/models/dino/${fileName}.`,
+    specialName: 'Vồ Săn Mồi',
+    specialDesc: 'Lao tới tấn công mạnh gây chảy máu',
+    specialCooldown: 8,
     icon: '🦕',
-    modelPath: `/models/${fileName}`,
+    modelPath: `/models/dino/${fileName}`,
     targetSize: 4.0,
     nametagHeight: 3.1,
     camDistance: 10.0,
@@ -243,7 +268,6 @@ export function computeDinoNormalization(
   const geomBox = new THREE.Box3();
   const boneBox = new THREE.Box3();
   const tempVec = new THREE.Vector3();
-
   let headBonePos: THREE.Vector3 | null = null;
   let rearBonePos: THREE.Vector3 | null = null;
 
@@ -251,7 +275,6 @@ export function computeDinoNormalization(
     if ((child as THREE.Bone).isBone) {
       child.getWorldPosition(tempVec);
       boneBox.expandByPoint(tempVec);
-
       const bName = child.name.toLowerCase();
       if (!headBonePos && (bName.includes('head') || bName.includes('snout') || bName.includes('jaw'))) {
         headBonePos = tempVec.clone();
@@ -289,13 +312,11 @@ export function computeDinoNormalization(
   let chosenBox = geomBox;
   let chosenSize = geomSize;
   let maxDim = geomMax;
-
   if (boneMax > geomMax * 1.2 && isFinite(boneMax) && boneMax < 10000) {
     chosenBox = boneBox;
     chosenSize = boneSize;
     maxDim = boneMax * 1.25;
   }
-
   if (!isFinite(maxDim) || maxDim < 0.05) {
     maxDim = targetSize;
   }

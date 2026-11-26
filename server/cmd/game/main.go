@@ -29,7 +29,6 @@ func getLocalLANIPs() []string {
 }
 
 func main() {
-	// Dependency Injection: Repository -> Service -> Controller -> Hub
 	worldRepo := repository.NewWorldRepository()
 	gameService := service.NewGameService(worldRepo)
 	wsController := controller.NewWSController(gameService)
@@ -43,15 +42,16 @@ func main() {
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		players, foods, worldTime := gameService.GetFullSnapshot()
+		players, foods, _, worldTime, weather := gameService.GetFullSnapshot()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(
 			w,
-			`{"status":"ok","name":"Dino Isle Server","onlineClients":%d,"entitiesCount":%d,"foodsCount":%d,"worldTime":%.2f}`,
+			`{"status":"ok","name":"Dino Isle Server","onlineClients":%d,"entitiesCount":%d,"foodsCount":%d,"worldTime":%.2f,"weather":"%s"}`,
 			hub.ClientCount(),
 			len(players),
 			len(foods),
 			worldTime,
+			weather,
 		)
 	})
 

@@ -8,6 +8,11 @@ import (
 const (
 	DietCarnivore = "carnivore"
 	DietHerbivore = "herbivore"
+
+	WeatherClear = "clear"
+	WeatherFog   = "fog"
+	WeatherRain  = "rain"
+	WeatherStorm = "storm"
 )
 
 type Player struct {
@@ -27,22 +32,28 @@ type Player struct {
 	Thirst          float64 `json:"thirst"`
 	Growth          float64 `json:"growth"`
 	BleedTimer      float64 `json:"bleed"`
+	BoneBreakTimer  float64 `json:"boneBreak"`
+	SpecialCDLeft   float64 `json:"specialCd"`
 	Kills           int     `json:"kills"`
 	IsResting       bool    `json:"isResting"`
 	RestUnlockLeft  float64 `json:"restUnlockLeft"`
 	CombatTimerLeft float64 `json:"combatTimerLeft"`
 	RegenRate       int     `json:"regenRate"`
 	IsCrouching     bool    `json:"isCrouching"`
+	PackID          string  `json:"packId,omitempty"`
+	PackInviteFrom  string  `json:"packInviteFrom,omitempty"`
+	PackInviteName  string  `json:"packInviteName,omitempty"`
 	RespawnSeq      int     `json:"respawnSeq"`
 	LastKilledBy    string  `json:"lastKilledBy,omitempty"`
 	IsAI            bool    `json:"isAi"`
 	AIState         string  `json:"aiState,omitempty"`
 
-	LastAttackTime time.Time `json:"-"`
-	LastEatTime    time.Time `json:"-"`
-	LastCombatTime time.Time `json:"-"`
-	RestStartedAt  time.Time `json:"-"`
-	LastRoarTime   time.Time `json:"-"`
+	LastAttackTime  time.Time `json:"-"`
+	LastSpecialTime time.Time `json:"-"`
+	LastEatTime     time.Time `json:"-"`
+	LastCombatTime  time.Time `json:"-"`
+	RestStartedAt   time.Time `json:"-"`
+	LastRoarTime    time.Time `json:"-"`
 
 	// Internal AI navigation & timers
 	TargetX         float64 `json:"-"`
@@ -52,6 +63,7 @@ type Player struct {
 	ProvokedTimer   float64 `json:"-"`
 	StateTimer      float64 `json:"-"`
 	BleedTickAccum  float64 `json:"-"`
+	BloodTrailAccum float64 `json:"-"`
 	StarveTickAccum float64 `json:"-"`
 	RegenTickAccum  float64 `json:"-"`
 }
@@ -66,6 +78,13 @@ type WorldFood struct {
 	ExpiresAt int64   `json:"-"`
 }
 
+type BloodTrail struct {
+	ID        string  `json:"id"`
+	X         float64 `json:"x"`
+	Z         float64 `json:"z"`
+	ExpiresAt int64   `json:"-"`
+}
+
 type CombatEvent struct {
 	ID         string  `json:"id"`
 	AttackerID string  `json:"attackerId"`
@@ -73,7 +92,7 @@ type CombatEvent struct {
 	Damage     int     `json:"damage"`
 	TargetHP   int     `json:"targetHp"`
 	IsKill     bool    `json:"isKill"`
-	AttackType string  `json:"attackType"` // "bite" | "tail" | "bleed" | "heal" | "roar"
+	AttackType string  `json:"attackType"` // "bite" | "tail" | "special" | "bleed" | "heal" | "roar" | "bonebreak"
 	X          float64 `json:"x"`
 	Y          float64 `json:"y"`
 	Z          float64 `json:"z"`
@@ -121,13 +140,19 @@ type RoarPayload struct {
 	CallType int `json:"callType"`
 }
 
+type PackPayload struct {
+	TargetID string `json:"targetId"`
+}
+
 type OutboundMessage struct {
-	Type      string                `json:"type"`
-	ID        string                `json:"id,omitempty"`
-	Players   map[string]*Player    `json:"players,omitempty"`
-	Foods     map[string]*WorldFood `json:"foods,omitempty"`
-	Events    []CombatEvent         `json:"events,omitempty"`
-	Chats     []ChatMessage         `json:"chats,omitempty"`
-	WorldTime float64               `json:"worldTime"`
-	Message   string                `json:"message,omitempty"`
+	Type        string                `json:"type"`
+	ID          string                `json:"id,omitempty"`
+	Players     map[string]*Player    `json:"players,omitempty"`
+	Foods       map[string]*WorldFood `json:"foods,omitempty"`
+	BloodTrails []BloodTrail          `json:"bloodTrails,omitempty"`
+	Events      []CombatEvent         `json:"events,omitempty"`
+	Chats       []ChatMessage         `json:"chats,omitempty"`
+	WorldTime   float64               `json:"worldTime"`
+	Weather     string                `json:"weather,omitempty"`
+	Message     string                `json:"message,omitempty"`
 }

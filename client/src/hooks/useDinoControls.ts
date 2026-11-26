@@ -16,11 +16,13 @@ const TAIL_CHARS = new Set(['e', 'ê']);
 interface UseDinoControlsParams {
   defaultCamDistance: number;
   onTriggerOneShot: (anim: AnimState) => void;
+  onTriggerSpecial: () => void;
 }
 
 export function useDinoControls({
   defaultCamDistance,
   onTriggerOneShot,
+  onTriggerSpecial,
 }: UseDinoControlsParams) {
   const { gl } = useThree();
   const setDinoScaleMultiplier = useGameStore((s) => s.setDinoScaleMultiplier);
@@ -92,7 +94,6 @@ export function useDinoControls({
         return;
       }
 
-      // Phím M: Mở / Đóng Bản Đồ Toàn Đảo
       if ((code === 'KeyM' || key === 'm' || keyCode === 77) && !e.repeat) {
         if (!store.isSettingsOpen) {
           resetMovementKeys();
@@ -200,6 +201,13 @@ export function useDinoControls({
         soundEngine.playBite();
         handled = true;
       }
+      // Phím V: Kỹ năng đặc trưng từng loài (Nghiền xương / Húc văng / Quất gai / Vồ săn mồi)
+      if (code === 'KeyV' || key === 'v' || keyCode === 86) {
+        if (store.specialCd <= 0) {
+          onTriggerSpecial();
+        }
+        handled = true;
+      }
       if (code === 'KeyG' || key === 'g' || keyCode === 71) {
         onTriggerOneShot('bite');
         socket.sendInteract();
@@ -267,7 +275,6 @@ export function useDinoControls({
     };
 
     const handleMouseDown = (e: MouseEvent) => {
-      // Chỉ xử lý khi click đúng lên canvas 3D WebGL (không bắt nhầm canvas Radar/Map)
       const is3DCanvas = e.target === canvas;
       if (!is3DCanvas) return;
 
@@ -344,6 +351,7 @@ export function useDinoControls({
   }, [
     gl,
     onTriggerOneShot,
+    onTriggerSpecial,
     setDinoScaleMultiplier,
     rotateCurrentModel90,
     triggerScent,

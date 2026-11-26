@@ -44,7 +44,6 @@ class GameSocket {
       if (onConnected) {
         onConnected();
       } else if (store.isJoined && this.lastJoinName) {
-        // Tự động vào lại phòng nếu mất mạng rồi có lại
         this.join(this.lastJoinName, this.lastJoinModel);
       }
     };
@@ -63,15 +62,19 @@ class GameSocket {
             useGameStore.getState().syncFromServer({
               players: data.players,
               foods: data.foods,
+              bloodTrails: data.bloodTrails,
               worldTime: data.worldTime,
+              weather: data.weather,
             });
           } else if (data.type === 'SYNC') {
             useGameStore.getState().syncFromServer({
               players: data.players,
               foods: data.foods,
+              bloodTrails: data.bloodTrails,
               events: data.events,
               chats: data.chats,
               worldTime: data.worldTime,
+              weather: data.weather,
             });
           }
         } catch (err) {
@@ -129,6 +132,13 @@ class GameSocket {
     });
   }
 
+  public sendSpecial() {
+    this.send({
+      type: 'SPECIAL',
+      payload: {},
+    });
+  }
+
   public sendInteract() {
     this.send({
       type: 'INTERACT',
@@ -161,6 +171,27 @@ class GameSocket {
     this.send({
       type: 'ROAR',
       payload: { callType },
+    });
+  }
+
+  public sendPackInvite(targetId: string) {
+    this.send({
+      type: 'PACK_INVITE',
+      payload: { targetId },
+    });
+  }
+
+  public sendPackAccept() {
+    this.send({
+      type: 'PACK_ACCEPT',
+      payload: {},
+    });
+  }
+
+  public sendPackLeave() {
+    this.send({
+      type: 'PACK_LEAVE',
+      payload: {},
     });
   }
 

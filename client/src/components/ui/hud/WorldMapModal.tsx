@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  bloodTrailsMutable,
   foodsMutable,
   localTransformMutable,
   playersMutable,
@@ -107,7 +108,6 @@ function getOrBuildTerrainCanvas(): HTMLCanvasElement {
   }
   ctx.putImageData(img, 0, 0);
 
-  // Lưới tọa độ
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
   ctx.lineWidth = 1;
   const gridStep = MAP_PX / 6;
@@ -124,7 +124,6 @@ function getOrBuildTerrainCanvas(): HTMLCanvasElement {
     ctx.stroke();
   }
 
-  // Vẽ viền 2 hồ nước
   const drawLakeOutline = (lx: number, lz: number, radius: number) => {
     const [sx, sy] = worldToMap(lx, lz);
     const rPx = (radius / ISLAND_LIMIT) * (MAP_PX / 2);
@@ -139,7 +138,6 @@ function getOrBuildTerrainCanvas(): HTMLCanvasElement {
   drawLakeOutline(OASIS_X, OASIS_Z, OASIS_RADIUS);
   drawLakeOutline(HIGHLAND_LAKE_X, HIGHLAND_LAKE_Z, HIGHLAND_LAKE_RADIUS);
 
-  // Nhãn địa danh
   const landmarks: Array<{ label: string; x: number; z: number; color: string }> = [
     { label: '💧 Hồ Oasis', x: OASIS_X, z: OASIS_Z - 36, color: '#7dd3fc' },
     { label: '💧 Hồ Cao Nguyên', x: HIGHLAND_LAKE_X, z: HIGHLAND_LAKE_Z - 44, color: '#7dd3fc' },
@@ -193,11 +191,22 @@ export const WorldMapModal: React.FC = () => {
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+      const st = useGameStore.getState();
 
       ctx.clearRect(0, 0, MAP_PX, MAP_PX);
       ctx.drawImage(bgCanvas, 0, 0);
 
-      // 1. Thức ăn (bụi quả & xác thịt)
+      // 1. Vệt máu truy dấu trên đảo
+      for (let i = 0; i < bloodTrailsMutable.length; i++) {
+        const bt = bloodTrailsMutable[i];
+        const [bx, by] = worldToMap(bt.x, bt.z);
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.72)';
+        ctx.beginPath();
+        ctx.arc(bx, by, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 2. Nguồn thức ăn
       for (const id of Object.keys(foodsMutable)) {
         const f = foodsMutable[id];
         if (!f || f.amount <= 0) continue;
@@ -216,39 +225,47 @@ export const WorldMapModal: React.FC = () => {
         }
       }
 
-      // 2. Các sinh vật khác
+      // 3. Các sinh vật khác (ưu tiên làm nổi bật Đồng đội Bầy đàn màu xanh dương)
       for (const id of Object.keys(playersMutable)) {
         if (id === myId) continue;
         const p = playersMutable[id];
         if (!p) continue;
         const [px, py] = worldToMap(p.x, p.z);
+        const isPackmate = Boolean(!p.isAi && st.packId && p.packId === st.packId);
         const isHunting = p.aiState === 'CHASE' || p.aiState === 'ATTACK';
-        ctx.fillStyle = isHunting
+        ctx.fillStyle = isPackmate
+          ? '#38bdf8'
+          : isHunting
           ? '#f97316'
           : p.diet === 'herbivore'
           ? '#34d399'
           : p.isAi
           ? '#a78bfa'
           : '#ef4444';
-        const radius = !p.isAi ? 6 : p.growth && p.growth > 1.1 ? 5.5 : 4.2;
+        const radius = isPackmate ? 6.2 : !p.isAi ? 6 : p.growth && p.growth > 1.1 ? 5.5 : 4.2;
         ctx.beginPath();
         ctx.arc(px, py, radius, 0, Math.PI * 2);
         ctx.fill();
+        if (isPackmate) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1.6;
+          ctx.stroke();
+        }
 
-        if (!p.isAi || (p.growth && p.growth >= 1.25)) {
+        if (isPackmate || !p.isAi || (p.growth && p.growth >= 1.25)) {
           ctx.font = 'bold 11px Inter, system-ui, sans-serif';
           ctx.textAlign = 'center';
           ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
           ctx.fillText(p.name, px + 1, py - 8);
-          ctx.fillStyle = !p.isAi ? '#fca5a5' : '#e9d5ff';
+          ctx.fillStyle = isPackmate ? '#7dd3fc' : !p.isAi ? '#fca5a5' : '#e9d5ff';
           ctx.fillText(p.name, px, py - 9);
         }
       }
 
       const [meX, meY] = worldToMap(localTransformMutable.x, localTransformMutable.z);
 
-      // 3. Điểm ghim Waypoint + đường dẫn
-      const wp = useGameStore.getState().mapWaypoint;
+      // 4. Điểm ghim Waypoint
+      const wp = st.mapWaypoint;
       if (wp) {
         const [wx, wy] = worldToMap(wp.x, wp.z);
         const distM = Math.round(
@@ -283,7 +300,7 @@ export const WorldMapModal: React.FC = () => {
         ctx.fillText(`📍 ${distM}m`, wx, wy - 14);
       }
 
-      // 4. Vị trí & hướng mặt người chơi
+      // 5. Người chơi hiện tại
       const rot = localTransformMutable.rot;
       ctx.strokeStyle = '#fde047';
       ctx.lineWidth = 3;
@@ -301,7 +318,6 @@ export const WorldMapModal: React.FC = () => {
       ctx.stroke();
     };
 
-    // Vẽ ngay lập tức khi vừa mở
     drawFrame(performance.now());
 
     const loop = (now: number) => {
@@ -449,7 +465,6 @@ export const WorldMapModal: React.FC = () => {
           </div>
         </div>
 
-        {/* Khung vuông lớn cố định kích thước trước màn hình */}
         <div
           style={{
             width: 'min(600px, 74vmin)',
@@ -492,7 +507,7 @@ export const WorldMapModal: React.FC = () => {
           }}
         >
           <div>
-            🟡 Bạn • 🔴 Người chơi • 🟢 Ăn cỏ • 🟣 Ăn thịt AI • 🟠 Đang săn • ♦️ Thịt • 🟩 Quả
+            🟡 Bạn • 🩵 Bầy đàn • 🔴 Người chơi • 🟢 Ăn cỏ • 🟣 Ăn thịt AI • 🩸 Vệt máu • ♦️ Thịt
           </div>
           <div style={{ color: '#fde047', fontWeight: '700' }}>
             {hoverInfo

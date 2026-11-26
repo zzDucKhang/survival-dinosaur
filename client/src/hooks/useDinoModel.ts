@@ -3,6 +3,7 @@ import { useAnimations, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { clone } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { computeDinoNormalization, getDinoAction } from '../constants/dinosaurs';
+import { setupMeshoptLoader } from '../core/meshopt';
 import type { AnimState } from '../types/game';
 
 export function useDinoModel(
@@ -10,7 +11,7 @@ export function useDinoModel(
   targetSize: number,
   explicitOffset?: number
 ) {
-  const { scene, animations } = useGLTF(modelPath);
+  const { scene, animations } = useGLTF(modelPath, false, true, setupMeshoptLoader);
 
   const { clonedScene, cleanedAnimations, initialNorm } = useMemo(() => {
     const cloned = clone(scene);
@@ -22,7 +23,6 @@ export function useDinoModel(
       }
     });
 
-    // Loại bỏ dịch chuyển ngang (Root Motion X/Z) trên xương gốc để khủng long không bị giật vị trí
     const strippedClips = animations.map((clip) => {
       const c = clip.clone();
       c.tracks = c.tracks.map((track) => {
@@ -59,13 +59,11 @@ export function useDinoModel(
   }, [scene, animations, targetSize, explicitOffset]);
 
   const { actions } = useAnimations(cleanedAnimations, clonedScene);
-
   const baseScaleRef = useRef(initialNorm.scale);
   const baseOffsetYRef = useRef(initialNorm.offsetY);
   const autoYawRef = useRef(initialNorm.autoForwardYaw);
   const isQuadrupedRef = useRef(initialNorm.isQuadruped);
   const calibratedFramesRef = useRef(0);
-
   const activeAnimRef = useRef<AnimState>('idle');
   const activeActionObjRef = useRef<THREE.AnimationAction | null>(null);
   const isOneShotPlayingRef = useRef(false);
@@ -77,7 +75,6 @@ export function useDinoModel(
       if (!forceOneShot && activeAnimRef.current === nextAnim && activeActionObjRef.current) {
         return;
       }
-
       const nextAction = getDinoAction(actions, nextAnim);
       if (!nextAction) return;
 
@@ -96,7 +93,6 @@ export function useDinoModel(
         nextAction.clampWhenFinished = false;
         nextAction.timeScale = 1.0;
         nextAction.fadeIn(0.1).play();
-
         if (oneShotTimerRef.current) {
           window.clearTimeout(oneShotTimerRef.current);
         }
@@ -146,13 +142,11 @@ export function useDinoModel(
         holderGroup.scale.setScalar(1);
         holderGroup.position.set(0, 0, 0);
         holderGroup.rotation.set(0, 0, 0);
-
         const postAnimNorm = computeDinoNormalization(clonedScene, targetSize, explicitOffset);
         baseScaleRef.current = postAnimNorm.scale;
         baseOffsetYRef.current = postAnimNorm.offsetY;
         autoYawRef.current = postAnimNorm.autoForwardYaw;
         isQuadrupedRef.current = postAnimNorm.isQuadruped;
-
         rootGroup.position.copy(savedPos);
         rootGroup.rotation.y = savedRot;
       }

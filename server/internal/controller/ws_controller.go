@@ -58,13 +58,15 @@ func (ctrl *WSController) HandleMessage(
 		}
 		ctrl.gameService.AddPlayer(player)
 
-		playersSnap, foodsSnap, worldTime := ctrl.gameService.GetFullSnapshot()
+		playersSnap, foodsSnap, bloodSnap, worldTime, weather := ctrl.gameService.GetFullSnapshot()
 		initResp := models.OutboundMessage{
-			Type:      "INIT",
-			ID:        clientID,
-			Players:   playersSnap,
-			Foods:     foodsSnap,
-			WorldTime: worldTime,
+			Type:        "INIT",
+			ID:          clientID,
+			Players:     playersSnap,
+			Foods:       foodsSnap,
+			BloodTrails: bloodSnap,
+			WorldTime:   worldTime,
+			Weather:     weather,
 		}
 		if respBytes, err := json.Marshal(initResp); err == nil {
 			sendFn(respBytes)
@@ -89,6 +91,9 @@ func (ctrl *WSController) HandleMessage(
 		if err := json.Unmarshal(inbound.Payload, &payload); err == nil {
 			ctrl.gameService.ProcessPlayerAttack(clientID, payload.AttackType)
 		}
+
+	case "SPECIAL":
+		ctrl.gameService.ProcessPlayerSpecial(clientID)
 
 	case "INTERACT":
 		ctrl.gameService.ProcessInteract(clientID)
@@ -117,6 +122,18 @@ func (ctrl *WSController) HandleMessage(
 		if err := json.Unmarshal(inbound.Payload, &payload); err == nil {
 			ctrl.gameService.ProcessRoar(clientID, payload.CallType)
 		}
+
+	case "PACK_INVITE":
+		var payload models.PackPayload
+		if err := json.Unmarshal(inbound.Payload, &payload); err == nil {
+			ctrl.gameService.InviteToPack(clientID, payload.TargetID)
+		}
+
+	case "PACK_ACCEPT":
+		ctrl.gameService.AcceptPackInvite(clientID)
+
+	case "PACK_LEAVE":
+		ctrl.gameService.LeavePack(clientID)
 	}
 }
 
