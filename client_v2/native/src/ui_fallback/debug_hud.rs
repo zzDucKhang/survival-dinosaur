@@ -1,6 +1,7 @@
 use crate::core::states::{AppState, RuntimeSettings};
 use crate::network::bridge::NetworkBridge;
 use crate::network::sync::WorldNetState;
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 
 #[derive(Component)]
@@ -40,6 +41,7 @@ pub fn spawn_debug_hud(mut commands: Commands) {
 #[allow(clippy::too_many_arguments)]
 pub fn update_debug_hud(
     time: Res<Time>,
+    diagnostics: Res<DiagnosticsStore>,
     keys: Res<ButtonInput<KeyCode>>,
     app_state: Res<State<AppState>>,
     bridge: Res<NetworkBridge>,
@@ -48,7 +50,6 @@ pub fn update_debug_hud(
     mut root_q: Query<&mut Visibility, With<DebugHudRoot>>,
     mut text_q: Query<&mut Text, With<DebugHudText>>,
     mut accum: Local<f32>,
-    mut smooth_fps: Local<f32>,
 ) {
     if keys.just_pressed(KeyCode::F3) {
         if let Ok(mut vis) = root_q.get_single_mut() {
@@ -61,17 +62,8 @@ pub fn update_debug_hud(
     }
 
     let dt = time.delta_secs();
-    if dt > 0.0001 {
-        let inst = (1.0 / dt).clamp(1.0, 240.0);
-        *smooth_fps = if *smooth_fps <= 1.0 {
-            inst
-        } else {
-            *smooth_fps * 0.9 + inst * 0.1
-        };
-    }
-
     *accum += dt;
-    if *accum < 0.2 {
+    if *accum < 0.25 {
         return;
     }
     *accum = 0.0;
@@ -79,6 +71,11 @@ pub fn update_debug_hud(
     let Ok(mut text) = text_q.get_single_mut() else {
         return;
     };
+
+    let smooth_fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(60.0);
 
     let conn = if net.server_connected { "ONLINE" } else { "OFFLINE" };
     let hud_cnt = bridge.hud_client_count();
@@ -91,7 +88,7 @@ pub fn update_debug_hud(
             "DINO ISLE NATIVE | {:.0} FPS | Go :8080 [{}] | HUD :9001 [{}]\n\
              Trang thai: LOBBY | Gio {:02}:{:02} | Thoi tiet: {}\n\
              Nhan [Enter] de vao test nhanh (hoac mo React HUD :5173) | [F3] An/Hien",
-            *smooth_fps, conn, hud_cnt, hh, mm, net.weather
+            smooth_fps, conn, hud_cnt, hh, mm, net.weather
         );
         return;
     }
@@ -120,7 +117,7 @@ pub fn update_debug_hud(
          HP: {}/{} | Stamina: {:.0}% | Doi: {}% | Khat: {}% | {:02}:{:02} [{}]\n\
          Pos: ({:.0}, {:.0}) | Entities: {} | [F3] An/Hien\n\
          {}",
-        *smooth_fps,
+        smooth_fps,
         conn,
         net.my_model.to_uppercase(),
         growth,

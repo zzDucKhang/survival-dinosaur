@@ -3,6 +3,9 @@ import { localTransformMutable } from "../store/mutableCache";
 import { useGameStore } from "../store/useGameStore";
 import { soundEngine } from "./soundEngine";
 
+let smoothedFps = 60;
+let lastFpsCommitAt = 0;
+
 class NativeIpcSocket {
   private ws: WebSocket | null = null;
   private url: string;
@@ -59,6 +62,7 @@ class NativeIpcSocket {
     ws.onopen = () => {
       if (this.ws !== ws) return;
       this.reconnectAttempt = 0;
+      lastFpsCommitAt = 0;
       console.log("[IPC] Connected to", this.url);
       useGameStore.getState().setIpcConnected(true);
       this.setUiFocus(false);
@@ -111,7 +115,21 @@ class NativeIpcSocket {
     const store = useGameStore.getState();
 
     if (msg.type === "LOCAL_TELEMETRY") {
-      store.applyLocalTelemetry(msg);
+      const rawFps = Number(msg.fps) || 0;
+      let nextFps = store.fps;
+      if (rawFps > 0) {
+        if (lastFpsCommitAt === 0) {
+          smoothedFps = rawFps;
+        } else {
+          smoothedFps = smoothedFps * 0.85 + rawFps * 0.15;
+        }
+      }
+      const now = performance.now();
+      if (lastFpsCommitAt === 0 || now - lastFpsCommitAt >= 500) {
+        lastFpsCommitAt = now;
+        nextFps = Math.round(smoothedFps);
+      }
+      store.applyLocalTelemetry({ ...msg, fps: nextFps });
       return;
     }
 

@@ -6,6 +6,7 @@ import { TopStatusBar } from "./features/topbar/TopStatusBar";
 import { ChatBox } from "./features/chat/ChatBox";
 import { VitalsPanel } from "./features/vitals/VitalsPanel";
 import { RadarMinimap } from "./features/radar/RadarMinimap";
+import { CompanionBackdrop } from "./features/map/CompanionBackdrop";
 import { WorldMapModal } from "./features/map/WorldMapModal";
 import { LeaderboardModal } from "./features/leaderboard/LeaderboardModal";
 import { SettingsModal } from "./features/settings/SettingsModal";
@@ -91,32 +92,38 @@ export const App: React.FC = () => {
         height: "100vh",
         position: "relative",
         overflow: "hidden",
-        background: isOverlayMode ? "transparent" : "#060c16",
+        background: isOverlayMode
+          ? "transparent"
+          : "radial-gradient(circle at 50% 40%, #0d2229 0%, #07131e 56%, #040912 100%)",
       }}
     >
       {!isJoined ? (
         <LoginScreen />
       ) : (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            pointerEvents: "none",
-            color: "#fff",
-          }}
-        >
-          <NightVisionOverlay />
-          <DamageOverlay />
-          <TopStatusBar />
-          <ChatBox />
-          <ControlsHelp />
-          <VitalsPanel />
-          <RadarMinimap />
-          <WorldMapModal />
-          <LeaderboardModal />
-          <DeathOverlay />
-          <SettingsModal />
-        </div>
+        <>
+          {!isOverlayMode && <CompanionBackdrop />}
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              pointerEvents: "none",
+              color: "#fff",
+              zIndex: 10,
+            }}
+          >
+            <NightVisionOverlay />
+            <DamageOverlay />
+            <TopStatusBar />
+            <ChatBox />
+            <ControlsHelp />
+            <VitalsPanel />
+            <RadarMinimap />
+            <WorldMapModal />
+            <LeaderboardModal />
+            <DeathOverlay />
+            <SettingsModal />
+          </div>
+        </>
       )}
     </div>
   );

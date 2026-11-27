@@ -190,7 +190,19 @@ export const TopStatusBar: React.FC = () => {
           />
           {playerCount}
         </span>
-        <span style={{ color: fpsColor }}>{fps} FPS</span>
+        <span
+          style={{
+            color: fpsColor,
+            display: "inline-block",
+            minWidth: "64px",
+            textAlign: "right",
+            fontFamily:
+              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {fps} FPS
+        </span>
       </div>
     </div>
   );

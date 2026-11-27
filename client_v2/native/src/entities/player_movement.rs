@@ -4,8 +4,7 @@ use super::components::{
 };
 use crate::core::config::GameConfig;
 use crate::core::math_terrain::{
-    calc_growth_visual_scale, get_entity_ground_height, get_terrain_slope, is_near_water,
-    WorldObstacles,
+    calc_growth_visual_scale, get_entity_ground_height, is_near_water, WorldObstacles,
 };
 use crate::core::states::RuntimeSettings;
 use crate::network::bridge::NetworkBridge;
@@ -303,20 +302,13 @@ pub fn update_local_player_movement(
     root_tf.rotation = Quat::from_rotation_y(net.local_rot);
     net.local_pos = root_tf.translation;
 
-    // 4. Tư thế nằm nghỉ / rón rén / nghiêng theo sườn dốc
+    // 4. Tư thế nằm nghỉ / rón rén (giữ thân thú thăng bằng ổn định khi di chuyển, không rung lắc địa hình)
     visual.rest_blend += ((if is_resting { 1.0 } else { 0.0 }) - visual.rest_blend) * (dt * 7.0).min(1.0);
     visual.crouch_blend += ((if !is_resting && is_crouching { 1.0 } else { 0.0 }) - visual.crouch_blend)
         * (dt * 9.0).min(1.0);
 
-    let (slope_pitch, slope_roll) =
-        get_terrain_slope(rx, rz, net.local_rot, (1.5 * total_mult).max(1.2) as f64, &cfg.world);
     if let Ok(mut slope_tf) = slope_q.get_mut(visual.slope_entity) {
-        let target_rot = Quat::from_euler(
-            EulerRot::XYZ,
-            slope_pitch + visual.crouch_blend * 0.10 + visual.rest_blend * 0.06,
-            0.0,
-            slope_roll,
-        );
+        let target_rot = Quat::from_rotation_x(visual.crouch_blend * 0.09 + visual.rest_blend * 0.05);
         slope_tf.rotation = slope_tf.rotation.slerp(target_rot, (dt * 10.0).min(1.0));
     }
 

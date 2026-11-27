@@ -4,6 +4,7 @@ use super::protocol::{
 };
 use crate::core::states::{AppState, RuntimeSettings};
 use crate::entities::components::LocalInputState;
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use std::collections::HashMap;
 use std::f32::consts::FRAC_PI_2;
@@ -232,26 +233,18 @@ pub fn poll_hud_commands(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn push_telemetry_to_hud(
     time: Res<Time>,
+    diagnostics: Res<DiagnosticsStore>,
     bridge: Res<NetworkBridge>,
     mut net: ResMut<WorldNetState>,
     settings: Res<RuntimeSettings>,
     app_state: Res<State<AppState>>,
     mut accum: Local<f32>,
-    mut smooth_fps: Local<f32>,
     mut prev_hud_count: Local<usize>,
 ) {
     let dt = time.delta_secs();
-    if dt > 0.0001 {
-        let inst_fps = (1.0 / dt).clamp(1.0, 240.0);
-        if *smooth_fps <= 1.0 {
-            *smooth_fps = inst_fps;
-        } else {
-            *smooth_fps = *smooth_fps * 0.9 + inst_fps * 0.1;
-        }
-    }
-
     let hud_count = bridge.hud_client_count();
     let just_connected_hud = hud_count > *prev_hud_count;
     *prev_hud_count = hud_count;
@@ -265,6 +258,12 @@ pub fn push_telemetry_to_hud(
     *accum = 0.0;
     net.telemetry_dirty = false;
 
+    let fps = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|d| d.smoothed())
+        .unwrap_or(60.0)
+        .round() as u32;
+
     let msg = LocalTelemetryMsg {
         msg_type: "LOCAL_TELEMETRY",
         server_connected: net.server_connected,
@@ -277,7 +276,7 @@ pub fn push_telemetry_to_hud(
         z: (net.local_pos.z * 100.0).round() / 100.0,
         rot: (net.local_rot * 1000.0).round() / 1000.0,
         stamina: net.local_stamina.round(),
-        fps: smooth_fps.round() as u32,
+        fps,
         night_vision: settings.night_vision,
         scent_remaining: (settings.scent_remaining_sec * 10.0).round() / 10.0,
         quality: settings.quality,

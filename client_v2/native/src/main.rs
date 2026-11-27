@@ -6,6 +6,7 @@ mod vfx;
 mod world;
 
 use bevy::asset::AssetMetaCheck;
+use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 use bevy::pbr::DirectionalLightShadowMap;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResolution};
@@ -64,6 +65,7 @@ fn main() {
                 }),
         )
         .add_plugins((
+            FrameTimeDiagnosticsPlugin::default(),
             CorePlugin,
             NetworkPlugin,
             WorldPlugin,

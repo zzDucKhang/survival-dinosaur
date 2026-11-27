@@ -4,9 +4,7 @@ use super::components::{
 };
 use super::player_movement::{spawn_dino_rig, DinoSharedAssets};
 use crate::core::config::GameConfig;
-use crate::core::math_terrain::{
-    calc_growth_visual_scale, get_entity_ground_height, get_terrain_slope,
-};
+use crate::core::math_terrain::{calc_growth_visual_scale, get_entity_ground_height};
 use crate::core::states::RuntimeSettings;
 use crate::network::sync::WorldNetState;
 use bevy::prelude::*;
@@ -153,20 +151,9 @@ pub fn sync_remote_entities(
             * (dt * 9.0).min(1.0);
 
         if dist_sq < 95.0 * 95.0 {
-            let (pitch, roll) = get_terrain_slope(
-                nx as f64,
-                nz as f64,
-                p.rot as f32,
-                (1.5 * visual_mult).max(1.2) as f64,
-                &cfg.world,
-            );
             if let Ok(mut slope_tf) = slope_q.get_mut(visual.slope_entity) {
-                let target_slope = Quat::from_euler(
-                    EulerRot::XYZ,
-                    pitch + visual.crouch_blend * 0.10 + visual.rest_blend * 0.06,
-                    0.0,
-                    roll,
-                );
+                let target_slope =
+                    Quat::from_rotation_x(visual.crouch_blend * 0.09 + visual.rest_blend * 0.05);
                 slope_tf.rotation = slope_tf.rotation.slerp(target_slope, (dt * 10.0).min(1.0));
             }
         }

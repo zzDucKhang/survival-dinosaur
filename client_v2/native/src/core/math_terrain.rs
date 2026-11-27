@@ -196,6 +196,7 @@ pub fn get_entity_ground_height(x: f64, z: f64, cfg: &WorldConfig) -> f64 {
     }
 }
 
+#[allow(dead_code)]
 pub fn get_terrain_slope(
     x: f64,
     z: f64,

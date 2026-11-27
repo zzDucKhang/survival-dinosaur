@@ -50,11 +50,12 @@ pub fn build_species_anim_graphs(
         let mut nodes = HashMap::new();
 
         if !gltf.animations.is_empty() {
-            let named: Vec<(String, Handle<AnimationClip>)> = gltf
+            let mut named: Vec<(String, Handle<AnimationClip>)> = gltf
                 .named_animations
                 .iter()
                 .map(|(k, v)| (k.to_lowercase(), v.clone()))
                 .collect();
+            named.sort_by(|a, b| a.0.cmp(&b.0));
 
             let fallback_first = gltf.animations[0].clone();
             let fallback_second = gltf
@@ -91,26 +92,60 @@ pub fn build_species_anim_graphs(
     }
 }
 
+fn is_excluded_anim_name(name: &str) -> bool {
+    const EXCLUDED: &[&str] = &[
+        "human", "death", "die", "dead", "fall", "wounded", "hit", "stun", "shake", "sneeze",
+        "climb",
+    ];
+    EXCLUDED.iter().any(|bad| name.contains(bad))
+}
+
 fn match_clip_for_state(
     state: AnimState,
     named: &[(String, Handle<AnimationClip>)],
     fallback_first: &Handle<AnimationClip>,
     fallback_second: &Handle<AnimationClip>,
 ) -> Handle<AnimationClip> {
+    let exact_names: &[&str] = match state {
+        AnimState::Idle => &["idle", "idle2", "idle investigate"],
+        AnimState::Walk => &["walk", "walk loop", "slowwalk", "walk slow loop"],
+        AnimState::Run => &["run", "sprint loop", "run head loop"],
+        AnimState::Bite => &["bite", "attack", "chase bite", "sideswipe"],
+        AnimState::Roar => &["roar", "bellow", "attack2"],
+        AnimState::Tail => &["attack_tail", "tailwhip", "bite 90 left", "attack3"],
+        AnimState::Rest => &["sleep", "rest", "idle", "idle2"],
+    };
+
+    for exact in exact_names {
+        if let Some((_, clip)) = named.iter().find(|(n, _)| n == exact) {
+            return clip.clone();
+        }
+    }
+
     let keywords: &[&str] = match state {
-        AnimState::Idle => &["idle", "stand", "wait", "breathe", "rest"],
-        AnimState::Walk => &["walk", "trot", "step", "move", "run", "locomotion"],
-        AnimState::Run => &["run", "gallop", "sprint", "chase", "walk", "move"],
+        AnimState::Idle => &["idle", "stand", "wait", "breathe", "look forward", "rest"],
+        AnimState::Walk => &["walk", "trot", "step", "move", "locomotion"],
+        AnimState::Run => &["sprint", "run", "gallop", "chase", "walk"],
         AnimState::Bite => &["bite", "attack", "horn", "headbutt", "chomp", "strike", "eat"],
-        AnimState::Roar => &["roar", "screech", "bellow", "call", "scream"],
-        AnimState::Tail => &["tail", "whip", "swipe", "stomp", "attack2"],
+        AnimState::Roar => &["roar", "bellow", "screech", "call", "scream", "alert"],
+        AnimState::Tail => &["tail", "whip", "swipe", "stomp", "attack2", "attack"],
         AnimState::Rest => &["sleep", "rest", "sit", "lie", "crouch", "idle", "stand"],
     };
 
+    // Ưu tiên tên hợp lệ không dính các clip tử vong/lắc/con người/stop
     for kw in keywords {
-        if let Some((_, clip)) = named.iter().find(|(n, _)| n.contains(kw)) {
+        if let Some((_, clip)) = named.iter().find(|(n, _)| {
+            n.contains(kw)
+                && !is_excluded_anim_name(n)
+                && !matches!(state, AnimState::Walk | AnimState::Run if n.contains("stop") || n.contains("back") || n.contains("bite") || n.contains("butt"))
+                && !matches!(state, AnimState::Idle | AnimState::Rest if n.contains("attack") || n.contains("alert"))
+        }) {
             return clip.clone();
         }
+    }
+
+    if let Some((_, clip)) = named.iter().find(|(n, _)| !is_excluded_anim_name(n)) {
+        return clip.clone();
     }
 
     match state {
