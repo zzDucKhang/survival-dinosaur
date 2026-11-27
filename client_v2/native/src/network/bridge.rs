@@ -255,14 +255,17 @@ fn run_ipc_ws_loop(
             let _ = stream.set_nonblocking(false);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
             let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
-            if let Ok(mut ws) = accept(stream) {
-                let _ = ws.get_mut().set_nonblocking(true);
-                let _ = ws.get_mut().set_nodelay(true);
-                if let Some(ref init_raw) = cached_init {
-                    let _ = ws.send(Message::Text(init_raw.clone().into()));
+            if let Ok((stream, _addr)) = listener.accept() {
+                let _ = stream.set_nonblocking(false);
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+                let _ = stream.set_write_timeout(Some(std::time::Duration::from_millis(500)));
+
+                if let Ok(mut ws) = tungstenite::accept(stream) {
+                    let _ = ws.get_mut().set_nonblocking(true);
+                    let _ = ws.get_mut().set_read_timeout(None);
+                    let _ = ws.get_mut().set_write_timeout(None);
+                    // giữ nguyên phần thêm ws vào danh sách clients và log [IPC] React HUD connected
                 }
-                clients.push(ws);
-                info!("[IPC] React HUD connected (total={})", clients.len());
             }
         }
 

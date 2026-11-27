@@ -26,18 +26,24 @@ class NativeIpcSocket {
     }
 
     this.intentionalClose = false;
+    let ws: WebSocket;
     try {
-      this.ws = new WebSocket(this.url);
-    } catch {
+      ws = new WebSocket(this.url);
+    } catch (err) {
+      console.error("[IPC] Cannot create WebSocket:", err);
       this.scheduleReconnect();
       return;
     }
+    this.ws = ws;
 
-    this.ws.onopen = () => {
+    ws.onopen = () => {
+      if (this.ws !== ws) return;
+      console.log("[IPC] Connected to", this.url);
       useGameStore.getState().setIpcConnected(true);
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (this.ws !== ws) return;
       const raw = typeof event.data === "string" ? event.data : "";
       if (!raw) return;
 
@@ -52,7 +58,14 @@ class NativeIpcSocket {
       }
     };
 
-    this.ws.onclose = () => {
+    ws.onerror = (err) => {
+      if (this.ws !== ws) return;
+      console.warn("[IPC] WebSocket error:", err);
+    };
+
+    ws.onclose = (ev) => {
+      if (this.ws !== ws) return;
+      console.warn("[IPC] Disconnected:", ev.code, ev.reason);
       useGameStore.getState().setIpcConnected(false);
       this.ws = null;
       if (!this.intentionalClose) {
@@ -208,8 +221,20 @@ class NativeIpcSocket {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    this.ws?.close();
-    this.ws = null;
+    if (this.ws) {
+      const old = this.ws;
+      this.ws = null;
+      old.onopen = null;
+      old.onmessage = null;
+      old.onerror = null;
+      old.onclose = null;
+      if (
+        old.readyState === WebSocket.OPEN ||
+        old.readyState === WebSocket.CONNECTING
+      ) {
+        old.close();
+      }
+    }
   }
 }
 
