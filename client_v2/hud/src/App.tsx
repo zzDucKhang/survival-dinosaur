@@ -12,6 +12,7 @@ import { LeaderboardModal } from "./features/leaderboard/LeaderboardModal";
 import { SettingsModal } from "./features/settings/SettingsModal";
 import { ControlsHelp } from "./features/overlays/ControlsHelp";
 import { DamageOverlay } from "./features/overlays/DamageOverlay";
+import { CombatFeed } from "./features/overlays/CombatFeed";
 import { DeathOverlay } from "./features/overlays/DeathOverlay";
 import { NightVisionOverlay } from "./features/overlays/NightVisionOverlay";
 
@@ -115,6 +116,7 @@ export const App: React.FC = () => {
             <DamageOverlay />
             <TopStatusBar />
             <ChatBox />
+            <CombatFeed />
             <ControlsHelp />
             <VitalsPanel />
             <RadarMinimap />

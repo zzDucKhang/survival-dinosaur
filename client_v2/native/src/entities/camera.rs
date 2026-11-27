@@ -1,8 +1,9 @@
-use super::components::{DinoVisual, LocalInputState, LocalPlayer, OrbitCameraState};
+use super::components::{AnimState, DinoVisual, LocalInputState, LocalPlayer, OrbitCameraState};
 use crate::core::config::GameConfig;
 use crate::core::math_terrain::{calc_growth_visual_scale, get_mesh_terrain_height};
 use crate::core::states::{AppState, RuntimeSettings};
 use crate::network::sync::WorldNetState;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::pbr::{DistanceFog, FogFalloff};
 use bevy::prelude::*;
@@ -17,6 +18,7 @@ pub fn spawn_main_camera(mut commands: Commands) {
         MainCamera,
         Camera3d::default(),
         Msaa::Off,
+        Tonemapping::AcesFitted,
         Projection::Perspective(PerspectiveProjection {
             far: 480.0,
             ..default()
@@ -46,10 +48,10 @@ pub fn update_orbit_camera(
     mut mouse_motion: EventReader<MouseMotion>,
     mut mouse_wheel: EventReader<MouseWheel>,
     local_q: Query<(&Transform, &DinoVisual), (With<LocalPlayer>, Without<MainCamera>)>,
-    mut cam_q: Query<&mut Transform, (With<MainCamera>, Without<LocalPlayer>)>,
+    mut cam_q: Query<(&mut Transform, &mut Projection), (With<MainCamera>, Without<LocalPlayer>)>,
 ) {
     let dt = time.delta_secs().min(0.1);
-    let Ok(mut cam_tf) = cam_q.get_single_mut() else {
+    let Ok((mut cam_tf, mut proj)) = cam_q.get_single_mut() else {
         return;
     };
 
@@ -63,6 +65,9 @@ pub fn update_orbit_camera(
         let cz = cam_state.lobby_angle.sin() * r;
         let cy = get_mesh_terrain_height(cx as f64, cz as f64, &cfg.world) as f32 + 24.0;
         *cam_tf = Transform::from_xyz(cx, cy, cz).looking_at(Vec3::new(15.0, 2.0, -15.0), Vec3::Y);
+        if let Projection::Perspective(ref mut persp) = *proj {
+            persp.fov = std::f32::consts::FRAC_PI_4;
+        }
         return;
     }
 
@@ -104,10 +109,31 @@ pub fn update_orbit_camera(
         cam_state.yaw += diff * (dt * 1.8).min(1.0);
     }
 
+    // FOV mở rộng nhẹ khi chạy nhanh (tạo cảm giác tốc độ mượt)
+    let is_running = visual.desired_anim == AnimState::Run;
+    let target_fov = if is_running {
+        std::f32::consts::FRAC_PI_4 * 1.13
+    } else {
+        std::f32::consts::FRAC_PI_4
+    };
+    cam_state.current_fov += (target_fov - cam_state.current_fov) * (dt * 6.0).min(1.0);
+    if let Projection::Perspective(ref mut persp) = *proj {
+        if (persp.fov - cam_state.current_fov).abs() > 0.0005 {
+            persp.fov = cam_state.current_fov;
+        }
+    }
+
     let spec = cfg.get_species(&net.my_model);
     let total_mult = calc_growth_visual_scale(visual.growth) * settings.dino_scale_multiplier;
-    let pivot_y =
+    let raw_pivot_y =
         player_tf.translation.y + spec.client.look_at_y * total_mult * (1.0 - visual.rest_blend * 0.3) + 0.6;
+    if (raw_pivot_y - cam_state.smooth_pivot_y).abs() > 8.0 {
+        cam_state.smooth_pivot_y = raw_pivot_y;
+    } else {
+        cam_state.smooth_pivot_y += (raw_pivot_y - cam_state.smooth_pivot_y) * (dt * 14.0).min(1.0);
+    }
+    let pivot_y = cam_state.smooth_pivot_y;
+
     let dist = cam_state.zoom_dist * (0.70 + 0.35 * total_mult);
     let horiz = cam_state.pitch.cos() * dist;
 

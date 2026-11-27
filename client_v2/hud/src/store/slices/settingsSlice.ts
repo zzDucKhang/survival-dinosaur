@@ -28,7 +28,7 @@ export const createSettingsSlice: StateCreator<
 > = (set, get) => ({
   nightVision: false,
   brightness: 1.25,
-  graphicsQuality: "low",
+  graphicsQuality: "medium",
   dinoScaleMultiplier: 1.0,
   soundEnabled: true,
 

@@ -122,6 +122,8 @@ pub struct OrbitCameraState {
     pub pitch: f32,
     pub zoom_dist: f32,
     pub lobby_angle: f32,
+    pub smooth_pivot_y: f32,
+    pub current_fov: f32,
 }
 
 impl Default for OrbitCameraState {
@@ -131,6 +133,8 @@ impl Default for OrbitCameraState {
             pitch: 0.28,
             zoom_dist: 10.5,
             lobby_angle: 0.0,
+            smooth_pivot_y: 0.0,
+            current_fov: std::f32::consts::FRAC_PI_4,
         }
     }
 }

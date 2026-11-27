@@ -15,6 +15,9 @@ export const ActionBar: React.FC = () => {
   const dino = getDinoSpec(selectedModel);
   const canExitRest = isResting && restUnlockLeft <= 0;
   const canUseSpecial = !isResting && specialCd <= 0;
+  const maxCd = Math.max(1, dino.special.cooldown);
+  const cdProgressPct =
+    specialCd > 0 ? Math.min(100, (specialCd / maxCd) * 100) : 0;
 
   const handleRestClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
@@ -50,34 +53,53 @@ export const ActionBar: React.FC = () => {
         onClick={handleSpecialClick}
         disabled={!canUseSpecial}
         title={dino.special.desc}
+        className="hud-icon-btn"
         style={{
+          position: "relative",
+          overflow: "hidden",
           background: canUseSpecial
             ? "linear-gradient(135deg, #d97706, #b45309)"
-            : "rgba(30, 41, 59, 0.9)",
+            : "rgba(15, 23, 42, 0.88)",
           border: canUseSpecial
             ? "1px solid #fbbf24"
             : "1px solid rgba(148, 163, 184, 0.3)",
-          color: canUseSpecial ? "#fffbeb" : "#94a3b8",
+          color: canUseSpecial ? "#fffbeb" : "#cbd5e1",
           padding: "6px 14px",
           borderRadius: "999px",
           fontSize: "12px",
           fontWeight: 800,
           cursor: canUseSpecial ? "pointer" : "not-allowed",
           boxShadow: canUseSpecial
-            ? "0 4px 14px rgba(245, 158, 11, 0.4)"
+            ? "0 4px 16px rgba(245, 158, 11, 0.45)"
             : "none",
         }}
       >
-        {specialCd > 0
-          ? `⏳ ${dino.special.name} (${specialCd.toFixed(1)}s)`
-          : `⚡ ${dino.special.name} [V]`}
+        {cdProgressPct > 0 && (
+          <span
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${100 - cdProgressPct}%`,
+              background: "rgba(245, 158, 11, 0.25)",
+              transition: "width 0.15s linear",
+            }}
+          />
+        )}
+        <span style={{ position: "relative" }}>
+          {specialCd > 0
+            ? `⏳ ${dino.special.name} (${specialCd.toFixed(1)}s)`
+            : `⚡ ${dino.special.name} [V]`}
+        </span>
       </button>
 
       {!isResting ? (
         <button
           onClick={handleRestClick}
+          className="hud-icon-btn"
           style={{
-            background: "rgba(15, 23, 42, 0.9)",
+            background: "rgba(15, 23, 42, 0.88)",
             border: "1px solid #38bdf8",
             color: "#7dd3fc",
             padding: "6px 14px",
@@ -94,6 +116,7 @@ export const ActionBar: React.FC = () => {
         <button
           onClick={handleRestClick}
           disabled={!canExitRest}
+          className="hud-icon-btn"
           style={{
             background: canExitRest
               ? "linear-gradient(135deg, #0284c7, #0369a1)"

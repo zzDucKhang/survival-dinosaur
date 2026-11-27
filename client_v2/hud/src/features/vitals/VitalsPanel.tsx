@@ -23,6 +23,7 @@ export const VitalsPanel: React.FC = () => {
     0,
     Math.min(100, (health / Math.max(1, maxHealth)) * 100),
   );
+  const isCritical = hpPercent < 25 || bleed > 0 || hunger < 18 || thirst < 18;
   const growthPct = Math.round(growth * 100);
   const stageLabel =
     growthPct >= 115
@@ -69,8 +70,9 @@ export const VitalsPanel: React.FC = () => {
       )}
 
       <div
+        className={`hud-glass${isCritical ? " hud-critical-pulse" : ""}`}
         style={{
-          width: "min(450px, 92vw)",
+          width: "min(460px, 92vw)",
           background: "var(--bg-panel)",
           border:
             bleed > 0
@@ -81,9 +83,9 @@ export const VitalsPanel: React.FC = () => {
                   ? "1px solid #38bdf8"
                   : isCrouching
                     ? "1px solid #facc15"
-                    : "1px solid rgba(255, 255, 255, 0.12)",
-          borderRadius: "12px",
-          padding: "12px 18px",
+                    : "1px solid rgba(255, 255, 255, 0.14)",
+          borderRadius: "14px",
+          padding: "13px 18px",
           boxShadow: "var(--shadow-panel)",
         }}
       >

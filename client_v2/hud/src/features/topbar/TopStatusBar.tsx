@@ -63,14 +63,18 @@ export const TopStatusBar: React.FC = () => {
     height: "38px",
     borderRadius: "10px",
     border: active ? "1px solid #34d399" : "1px solid rgba(255,255,255,0.16)",
-    background: active ? "rgba(16, 185, 129, 0.28)" : "rgba(15, 23, 42, 0.84)",
+    background: active
+      ? "rgba(16, 185, 129, 0.30)"
+      : "rgba(11, 18, 32, 0.80)",
     color: "#f8fafc",
     fontSize: "17px",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    boxShadow: active
+      ? "0 4px 16px rgba(16, 185, 129, 0.35)"
+      : "0 4px 12px rgba(0,0,0,0.4)",
   });
 
   const handleBtn =
@@ -94,6 +98,7 @@ export const TopStatusBar: React.FC = () => {
       }}
     >
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(() => setSettingsOpen(!isSettingsOpen))}
         title="Cài đặt & Đồ họa"
         style={iconBtnStyle(isSettingsOpen)}
@@ -101,6 +106,7 @@ export const TopStatusBar: React.FC = () => {
         ⚙️
       </button>
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(toggleChatVisible)}
         title="Ẩn / Hiện khung Chat"
         style={iconBtnStyle(isChatVisible)}
@@ -108,6 +114,7 @@ export const TopStatusBar: React.FC = () => {
         💬
       </button>
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(toggleHelp)}
         title="Bảng phím điều khiển"
         style={iconBtnStyle(showHelp)}
@@ -115,6 +122,7 @@ export const TopStatusBar: React.FC = () => {
         🎮
       </button>
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(rotateModel90)}
         title="Xoay hướng đầu thú 90° (Phím T)"
         style={iconBtnStyle(false)}
@@ -122,6 +130,7 @@ export const TopStatusBar: React.FC = () => {
         ↻
       </button>
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(toggleNightVision)}
         title="Tầm nhìn Ban Đêm (Phím N)"
         style={iconBtnStyle(nightVision)}
@@ -129,6 +138,7 @@ export const TopStatusBar: React.FC = () => {
         👁️
       </button>
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(() => ipcSocket.triggerScent())}
         title="Đánh hơi thức ăn, nước & vệt máu (Phím Q)"
         style={iconBtnStyle(scentRemaining > 0)}
@@ -136,6 +146,7 @@ export const TopStatusBar: React.FC = () => {
         👃
       </button>
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(toggleMapOpen)}
         title="Mở Bản Đồ Toàn Đảo (Phím M)"
         style={iconBtnStyle(isMapOpen)}
@@ -143,6 +154,7 @@ export const TopStatusBar: React.FC = () => {
         🗺️
       </button>
       <button
+        className="hud-icon-btn hud-glass"
         onClick={handleBtn(() => setShowLeaderboard(!showLeaderboard))}
         title="Bảng Sinh Tồn & Bầy Đàn (Tab)"
         style={iconBtnStyle(showLeaderboard)}
@@ -151,9 +163,10 @@ export const TopStatusBar: React.FC = () => {
       </button>
 
       <div
+        className="hud-glass"
         style={{
           height: "38px",
-          background: "rgba(15, 23, 42, 0.84)",
+          background: "rgba(11, 18, 32, 0.80)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "10px",
           padding: "0 14px",
@@ -162,7 +175,7 @@ export const TopStatusBar: React.FC = () => {
           gap: "11px",
           fontSize: "12px",
           fontWeight: 700,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+          boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
         }}
       >
         <span style={{ color: "#4ade80" }}>
@@ -171,6 +184,11 @@ export const TopStatusBar: React.FC = () => {
         <span style={{ color: "#475569" }}>|</span>
         <span style={{ color: "#fde047" }}>{clockLabel}</span>
         <span style={{ color: weatherMeta.color }}>{weatherMeta.label}</span>
+        {scentRemaining > 0 && (
+          <span style={{ color: "#38bdf8" }}>
+            👃 {scentRemaining.toFixed(1)}s
+          </span>
+        )}
         <span style={{ color: "#f87171" }}>💀 {kills}</span>
         <span
           style={{

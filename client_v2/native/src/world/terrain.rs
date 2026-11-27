@@ -1,4 +1,4 @@
-use crate::core::config::GameConfig;
+use crate::core::config::{GameConfig, WorldConfig};
 use crate::core::math_terrain::get_terrain_height;
 use bevy::image::{ImageAddressMode, ImageLoaderSettings, ImageSampler, ImageSamplerDescriptor};
 use bevy::math::Affine2;
@@ -35,9 +35,10 @@ pub fn spawn_terrain(
     let material_handle = materials.add(StandardMaterial {
         base_color: Color::WHITE,
         base_color_texture: Some(ground_tex),
-        uv_transform: Affine2::from_scale(Vec2::splat(68.0)),
-        perceptual_roughness: 0.94,
+        uv_transform: Affine2::from_scale(Vec2::splat(88.0)),
+        perceptual_roughness: 0.88,
         metallic: 0.02,
+        reflectance: 0.24,
         ..default()
     });
 
@@ -52,7 +53,7 @@ pub fn spawn_terrain(
     ));
 }
 
-fn build_terrain_mesh(wcfg: &crate::core::config::WorldConfig) -> Mesh {
+fn build_terrain_mesh(wcfg: &WorldConfig) -> Mesh {
     let segs = wcfg.terrain_segments.max(8);
     let size = wcfg.terrain_size;
     let half = size * 0.5;
@@ -91,7 +92,7 @@ fn build_terrain_mesh(wcfg: &crate::core::config::WorldConfig) -> Mesh {
             .normalize_or_zero();
             normals.push(n.to_array());
 
-            colors.push(sample_biome_vertex_color(x, y, z));
+            colors.push(sample_biome_vertex_color(x, y, z, n.y, wcfg));
         }
     }
 
@@ -121,32 +122,55 @@ fn build_terrain_mesh(wcfg: &crate::core::config::WorldConfig) -> Mesh {
     mesh
 }
 
-fn sample_biome_vertex_color(x: f64, y: f64, z: f64) -> [f32; 4] {
-    let variation = ((x * 0.045).sin() * (z * 0.045).cos() * 0.05) as f32;
+fn sample_biome_vertex_color(
+    x: f64,
+    y: f64,
+    z: f64,
+    normal_y: f32,
+    wcfg: &WorldConfig,
+) -> [f32; 4] {
+    let variation = (((x * 0.045).sin() * (z * 0.045).cos()
+        + (x * 0.019 + z * 0.023).cos() * 0.5)
+        * 0.045) as f32;
     let y32 = y as f32;
 
-    let base = if y32 < -0.5 {
-        [0.44, 0.48, 0.36]
-    } else if y32 < 0.5 {
-        let t = (y32 + 0.5).clamp(0.0, 1.0);
-        lerp_rgb([0.68, 0.62, 0.48], [0.56, 0.68, 0.48], t)
+    let mut base = if y32 < -0.55 {
+        [0.36, 0.44, 0.34]
+    } else if y32 < 0.65 {
+        let t = (y32 + 0.55) / 1.2;
+        lerp_rgb([0.76, 0.68, 0.49], [0.54, 0.69, 0.44], t.clamp(0.0, 1.0))
     } else if y32 < 9.0 {
-        let t = ((y32 - 0.5) / 8.5).clamp(0.0, 1.0);
-        lerp_rgb([0.55, 0.67, 0.46], [0.44, 0.58, 0.41], t)
+        let t = ((y32 - 0.65) / 8.35).clamp(0.0, 1.0);
+        lerp_rgb([0.52, 0.68, 0.43], [0.39, 0.57, 0.38], t)
     } else if y32 < 18.0 {
         let t = ((y32 - 9.0) / 9.0).clamp(0.0, 1.0);
-        lerp_rgb([0.44, 0.58, 0.41], [0.52, 0.55, 0.58], t)
+        lerp_rgb([0.39, 0.57, 0.38], [0.50, 0.53, 0.55], t)
     } else if y32 < 29.0 {
         let t = ((y32 - 18.0) / 11.0).clamp(0.0, 1.0);
-        lerp_rgb([0.52, 0.55, 0.58], [0.68, 0.72, 0.76], t)
+        lerp_rgb([0.50, 0.53, 0.55], [0.70, 0.74, 0.78], t)
     } else {
-        [0.76, 0.80, 0.84]
+        [0.80, 0.84, 0.88]
     };
 
+    // Bãi cát vàng ven 2 hồ nước
+    let d1 = (x - wcfg.oasis_x).hypot(z - wcfg.oasis_z) - wcfg.oasis_radius;
+    let d2 = (x - wcfg.highland_lake_x).hypot(z - wcfg.highland_lake_z) - wcfg.highland_lake_radius;
+    let shore_dist = d1.min(d2);
+    if shore_dist > -4.0 && shore_dist < 10.0 {
+        let sand_w = (1.0 - ((shore_dist - 1.5).abs() / 8.5)).clamp(0.0, 1.0) as f32;
+        base = lerp_rgb(base, [0.80, 0.72, 0.52], sand_w * 0.72);
+    }
+
+    // Vách núi dốc tự động pha màu đá xám rêu thay vì phủ cỏ phẳng
+    let cliff_factor = ((0.92 - normal_y) / 0.24).clamp(0.0, 1.0);
+    if cliff_factor > 0.01 {
+        base = lerp_rgb(base, [0.46, 0.48, 0.51], cliff_factor * 0.85);
+    }
+
     [
-        (base[0] + variation).clamp(0.05, 1.0),
-        (base[1] + variation).clamp(0.05, 1.0),
-        (base[2] + variation).clamp(0.05, 1.0),
+        (base[0] + variation).clamp(0.06, 1.0),
+        (base[1] + variation).clamp(0.06, 1.0),
+        (base[2] + variation).clamp(0.06, 1.0),
         1.0,
     ]
 }

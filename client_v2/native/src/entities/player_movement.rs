@@ -66,6 +66,7 @@ pub fn spawn_dino_rig(
             },
             SceneRoot(scene_handle),
             Transform::from_rotation(Quat::from_rotation_y(spec.client.rotation_offset)),
+            Visibility::Hidden,
         ))
         .id();
 
@@ -389,7 +390,7 @@ pub fn update_local_player_movement(
             } else {
                 Some("💤 Đang nghỉ ngơi (+20 HP/s) — Bấm [H] để đứng dậy".to_string())
             }
-        } else if near_water {
+        } else if near_water && me.as_ref().map_or(true, |p| p.thirst < 99.0) {
             Some("💧 Bấm [G] để Uống nước (+Khát & Cầm máu)".to_string())
         } else {
             let desired_food = if spec.is_carnivore() { "meat" } else { "plant" };

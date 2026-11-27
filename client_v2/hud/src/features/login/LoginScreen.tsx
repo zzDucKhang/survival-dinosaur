@@ -215,10 +215,30 @@ export const LoginScreen: React.FC = () => {
                       style={{
                         fontSize: "10px",
                         color: "#9ca3af",
-                        lineHeight: 1.3,
+                        lineHeight: 1.35,
+                        marginBottom: "6px",
                       }}
                     >
                       {dino.description}
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "9.5px",
+                        fontWeight: 700,
+                        color: "#cbd5e1",
+                        borderTop: "1px solid rgba(255,255,255,0.08)",
+                        paddingTop: "5px",
+                      }}
+                    >
+                      <span style={{ color: "#fca5a5" }}>❤️ {dino.baseMaxHp}</span>
+                      <span style={{ color: "#fdba74" }}>
+                        ⚔️ {dino.biteDamage}
+                      </span>
+                      <span style={{ color: "#7dd3fc" }}>
+                        ⚡ {dino.special.name}
+                      </span>
                     </div>
                   </div>
                 );

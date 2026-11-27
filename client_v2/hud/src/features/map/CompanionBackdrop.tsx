@@ -1,4 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { WORLD_CONFIG, getTerrainHeight } from "../../config/world";
+import { localTransformMutable } from "../../store/mutableCache";
 import { useGameStore } from "../../store/useGameStore";
 import {
   getOrBuildTerrainCanvas,
@@ -9,6 +11,32 @@ import {
 export const CompanionBackdrop: React.FC = () => {
   const isMapOpen = useGameStore((s) => s.isMapOpen);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [coords, setCoords] = useState({ x: 0, z: 0, alt: 1, lakeDist: 85 });
+
+  useEffect(() => {
+    const syncStats = () => {
+      const x = Math.round(localTransformMutable.x);
+      const z = Math.round(localTransformMutable.z);
+      const alt = Math.round(getTerrainHeight(x, z));
+      const d1 = Math.hypot(x - WORLD_CONFIG.oasisX, z - WORLD_CONFIG.oasisZ);
+      const d2 = Math.hypot(
+        x - WORLD_CONFIG.highlandLakeX,
+        z - WORLD_CONFIG.highlandLakeZ,
+      );
+      const lakeDist = Math.max(0, Math.round(Math.min(d1, d2)));
+      setCoords((prev) =>
+        prev.x === x &&
+        prev.z === z &&
+        prev.alt === alt &&
+        prev.lakeDist === lakeDist
+          ? prev
+          : { x, z, alt, lakeDist },
+      );
+    };
+    syncStats();
+    const timer = window.setInterval(syncStats, 350);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (isMapOpen) return;
@@ -59,21 +87,33 @@ export const CompanionBackdrop: React.FC = () => {
       }}
     >
       <div
+        className="hud-glass"
         style={{
           marginBottom: "8px",
-          padding: "4px 12px",
+          padding: "5px 14px",
           borderRadius: "999px",
-          background: "rgba(15, 23, 42, 0.78)",
-          border: "1px solid rgba(52, 211, 153, 0.28)",
-          color: "#94a3b8",
+          background: "rgba(11, 18, 32, 0.78)",
+          border: "1px solid rgba(52, 211, 153, 0.30)",
+          color: "#cbd5e1",
           fontSize: "11px",
           fontWeight: 600,
           letterSpacing: "0.3px",
+          display: "flex",
+          alignItems: "center",
+          gap: "12px",
         }}
       >
-        🗺️ Bản đồ đảo trực tiếp • Đồ họa 3D chạy trên cửa sổ{" "}
-        <b style={{ color: "#4ade80" }}>Dino Isle Native</b> • Dùng{" "}
-        <code style={{ color: "#7dd3fc" }}>?overlay=1</code> để nền trong suốt
+        <span>
+          🗺️ Bản đồ đảo trực tiếp • Đồ họa 3D chạy trên cửa sổ{" "}
+          <b style={{ color: "#4ade80" }}>Dino Isle Native</b>
+        </span>
+        <span style={{ color: "#475569" }}>|</span>
+        <span style={{ color: "#fde047", fontVariantNumeric: "tabular-nums" }}>
+          📍 X {coords.x}, Z {coords.z} ({coords.alt}m)
+        </span>
+        <span style={{ color: "#7dd3fc", fontVariantNumeric: "tabular-nums" }}>
+          💧 Hồ gần nhất: {coords.lakeDist}m
+        </span>
       </div>
 
       <div
@@ -82,9 +122,9 @@ export const CompanionBackdrop: React.FC = () => {
           height: "min(440px, 46vh, 80vw)",
           borderRadius: "16px",
           overflow: "hidden",
-          border: "1px solid rgba(52, 211, 153, 0.32)",
-          boxShadow: "0 16px 48px rgba(0, 0, 0, 0.55)",
-          opacity: 0.92,
+          border: "1px solid rgba(52, 211, 153, 0.38)",
+          boxShadow: "0 20px 56px rgba(0, 0, 0, 0.62)",
+          opacity: 0.94,
         }}
       >
         <canvas

@@ -3,6 +3,7 @@ use crate::core::math_terrain::get_mesh_terrain_height;
 use crate::core::states::RuntimeSettings;
 use crate::network::sync::WorldNetState;
 use crate::world::foliage::{CullTier, DistanceCulled};
+use crate::world::material_fix::SceneMaterialPolicy;
 use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -12,8 +13,11 @@ use std::f32::consts::FRAC_PI_2;
 pub struct WorldItemAssets {
     pub meat_mesh: Handle<Mesh>,
     pub meat_mat: Handle<StandardMaterial>,
-    pub plant_mesh: Handle<Mesh>,
-    pub plant_mat: Handle<StandardMaterial>,
+    pub bone_mesh: Handle<Mesh>,
+    pub bone_mat: Handle<StandardMaterial>,
+    pub plant_fern_scene: Handle<Scene>,
+    pub berry_mesh: Handle<Mesh>,
+    pub berry_mat: Handle<StandardMaterial>,
     pub blood_mesh: Handle<Mesh>,
     pub blood_mat: Handle<StandardMaterial>,
     pub waypoint_pillar_mesh: Handle<Mesh>,
@@ -34,39 +38,52 @@ pub struct WaypointRing;
 
 pub fn init_world_item_assets(
     mut commands: Commands,
+    cfg: Res<GameConfig>,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     commands.insert_resource(WorldItemAssets {
-        meat_mesh: meshes.add(Sphere::new(0.85)),
+        meat_mesh: meshes.add(Sphere::new(0.78)),
         meat_mat: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.72, 0.11, 0.11),
-            perceptual_roughness: 0.65,
+            base_color: Color::srgb(0.68, 0.10, 0.11),
+            perceptual_roughness: 0.55,
+            reflectance: 0.35,
             ..default()
         }),
-        plant_mesh: meshes.add(Sphere::new(1.1)),
-        plant_mat: materials.add(StandardMaterial {
-            base_color: Color::srgb(0.10, 0.62, 0.28),
-            perceptual_roughness: 0.88,
+        bone_mesh: meshes.add(Cylinder::new(0.14, 1.85)),
+        bone_mat: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.92, 0.89, 0.81),
+            perceptual_roughness: 0.78,
+            ..default()
+        }),
+        plant_fern_scene: asset_server.load(format!("{}#Scene0", cfg.env.fern)),
+        berry_mesh: meshes.add(Sphere::new(0.18)),
+        berry_mat: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.92, 0.22, 0.28),
+            emissive: LinearRgba::rgb(0.28, 0.04, 0.05),
+            perceptual_roughness: 0.32,
             ..default()
         }),
         blood_mesh: meshes.add(Circle::new(0.72)),
         blood_mat: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.60, 0.10, 0.10, 0.78),
+            base_color: Color::srgba(0.60, 0.08, 0.08, 0.80),
             unlit: true,
             alpha_mode: AlphaMode::Blend,
             ..default()
         }),
         waypoint_pillar_mesh: meshes.add(Cylinder::new(0.65, 84.0)),
         waypoint_pillar_mat: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.98, 0.80, 0.08, 0.36),
+            base_color: Color::srgba(0.98, 0.80, 0.08, 0.34),
+            emissive: LinearRgba::rgb(0.9, 0.7, 0.1),
             unlit: true,
             alpha_mode: AlphaMode::Blend,
             ..default()
         }),
         waypoint_ring_mesh: meshes.add(Annulus::new(2.1, 2.9)),
         waypoint_ring_mat: materials.add(StandardMaterial {
-            base_color: Color::srgba(0.99, 0.88, 0.28, 0.85),
+            base_color: Color::srgba(0.99, 0.88, 0.28, 0.88),
+            emissive: LinearRgba::rgb(1.0, 0.85, 0.2),
             unlit: true,
             alpha_mode: AlphaMode::Blend,
             double_sided: true,
@@ -74,6 +91,110 @@ pub fn init_world_item_assets(
             ..default()
         }),
     });
+}
+
+fn spawn_meat_carcass(
+    commands: &mut Commands,
+    assets: &WorldItemAssets,
+    id: &str,
+    x: f32,
+    y: f32,
+    z: f32,
+    ratio: f32,
+) -> Entity {
+    let chunk_main = commands
+        .spawn((
+            Mesh3d(assets.meat_mesh.clone()),
+            MeshMaterial3d(assets.meat_mat.clone()),
+            Transform::from_xyz(0.0, 0.35, 0.0).with_scale(Vec3::new(1.25, 0.65, 0.95)),
+            NotShadowCaster,
+        ))
+        .id();
+    let chunk_side = commands
+        .spawn((
+            Mesh3d(assets.meat_mesh.clone()),
+            MeshMaterial3d(assets.meat_mat.clone()),
+            Transform::from_xyz(0.55, 0.24, 0.28).with_scale(Vec3::new(0.75, 0.50, 0.65)),
+            NotShadowCaster,
+        ))
+        .id();
+    let bone = commands
+        .spawn((
+            Mesh3d(assets.bone_mesh.clone()),
+            MeshMaterial3d(assets.bone_mat.clone()),
+            Transform::from_xyz(-0.15, 0.42, 0.0)
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, 0.3, 0.4, FRAC_PI_2)),
+            NotShadowCaster,
+        ))
+        .id();
+
+    commands
+        .spawn((
+            Name::new(format!("Food_{id}")),
+            DistanceCulled {
+                world_xz: Vec2::new(x, z),
+                tier: CullTier::Item,
+                extra_radius: 8.0,
+                density_rank: 0.0,
+            },
+            Transform::from_xyz(x, y, z).with_scale(Vec3::splat(ratio)),
+            Visibility::Visible,
+        ))
+        .add_children(&[chunk_main, chunk_side, bone])
+        .id()
+}
+
+fn spawn_berry_bush(
+    commands: &mut Commands,
+    assets: &WorldItemAssets,
+    id: &str,
+    x: f32,
+    y: f32,
+    z: f32,
+    ratio: f32,
+) -> Entity {
+    let fern = commands
+        .spawn((
+            SceneRoot(assets.plant_fern_scene.clone()),
+            SceneMaterialPolicy::foliage_ground(),
+            Transform::from_xyz(0.0, -0.05, 0.0).with_scale(Vec3::splat(2.1)),
+        ))
+        .id();
+
+    let berry_offsets = [
+        Vec3::new(0.32, 0.72, 0.18),
+        Vec3::new(-0.28, 0.68, 0.25),
+        Vec3::new(0.08, 0.85, -0.24),
+        Vec3::new(-0.18, 0.62, -0.32),
+    ];
+    let mut children = Vec::with_capacity(5);
+    children.push(fern);
+    for off in berry_offsets {
+        let b = commands
+            .spawn((
+                Mesh3d(assets.berry_mesh.clone()),
+                MeshMaterial3d(assets.berry_mat.clone()),
+                Transform::from_translation(off),
+                NotShadowCaster,
+            ))
+            .id();
+        children.push(b);
+    }
+
+    commands
+        .spawn((
+            Name::new(format!("Food_{id}")),
+            DistanceCulled {
+                world_xz: Vec2::new(x, z),
+                tier: CullTier::Item,
+                extra_radius: 8.0,
+                density_rank: 0.0,
+            },
+            Transform::from_xyz(x, y, z).with_scale(Vec3::splat(ratio)),
+            Visibility::Visible,
+        ))
+        .add_children(&children)
+        .id()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -113,28 +234,11 @@ pub fn sync_world_items(
                 }
             } else {
                 let y = get_mesh_terrain_height(f.x, f.z, &cfg.world) as f32;
-                let is_meat = f.food_type == "meat";
-                let (mesh, mat, y_off) = if is_meat {
-                    (assets.meat_mesh.clone(), assets.meat_mat.clone(), 0.45)
+                let entity = if f.food_type == "meat" {
+                    spawn_meat_carcass(&mut commands, &assets, id, f.x as f32, y, f.z as f32, ratio)
                 } else {
-                    (assets.plant_mesh.clone(), assets.plant_mat.clone(), 0.60)
+                    spawn_berry_bush(&mut commands, &assets, id, f.x as f32, y, f.z as f32, ratio)
                 };
-                let entity = commands
-                    .spawn((
-                        Name::new(format!("Food_{id}")),
-                        Mesh3d(mesh),
-                        MeshMaterial3d(mat),
-                        DistanceCulled {
-                            world_xz: Vec2::new(f.x as f32, f.z as f32),
-                            tier: CullTier::Item,
-                            extra_radius: 8.0,
-                            density_rank: 0.0,
-                        },
-                        Transform::from_xyz(f.x as f32, y + y_off, f.z as f32)
-                            .with_scale(Vec3::splat(ratio)),
-                        NotShadowCaster,
-                    ))
-                    .id();
                 registry.foods.insert(id.clone(), entity);
             }
         }

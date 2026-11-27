@@ -239,10 +239,13 @@ pub fn drive_dino_animations(
 pub fn calibrate_dino_models(
     children_q: Query<&Children>,
     aabb_q: Query<(&GlobalTransform, &Aabb)>,
-    mut holders_q: Query<(Entity, &GlobalTransform, &mut DinoModelHolder)>,
+    mut holders_q: Query<(Entity, &GlobalTransform, &mut DinoModelHolder, &mut Visibility)>,
 ) {
-    for (holder_entity, holder_gtf, mut holder) in &mut holders_q {
+    for (holder_entity, holder_gtf, mut holder, mut holder_vis) in &mut holders_q {
         if holder.calibrated {
+            if *holder_vis != Visibility::Inherited {
+                *holder_vis = Visibility::Inherited;
+            }
             continue;
         }
         // Chờ SceneInstance tải xong và sinh entity con trước khi đếm frame
@@ -291,6 +294,7 @@ pub fn calibrate_dino_models(
         if mesh_count == 0 {
             if holder.calibrate_frames >= 120 {
                 holder.calibrated = true;
+                *holder_vis = Visibility::Inherited;
             }
             continue;
         }
@@ -306,6 +310,10 @@ pub fn calibrate_dino_models(
                 0.0
             };
             holder.calibrated = true;
+            *holder_vis = Visibility::Inherited;
+        } else if holder.calibrate_frames >= 120 {
+            holder.calibrated = true;
+            *holder_vis = Visibility::Inherited;
         }
     }
 }

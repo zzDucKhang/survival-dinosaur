@@ -12,8 +12,8 @@ pub enum AppState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum GraphicsQuality {
-    #[default]
     Low,
+    #[default]
     Medium,
     High,
 }
@@ -29,17 +29,17 @@ impl GraphicsQuality {
 
     pub fn tree_cull_dist(self) -> f32 {
         match self {
-            Self::Low => 135.0,
-            Self::Medium => 185.0,
-            Self::High => 240.0,
+            Self::Low => 145.0,
+            Self::Medium => 195.0,
+            Self::High => 260.0,
         }
     }
 
     pub fn detail_cull_dist(self) -> f32 {
         match self {
-            Self::Low => 52.0,
-            Self::Medium => 75.0,
-            Self::High => 105.0,
+            Self::Low => 55.0,
+            Self::Medium => 82.0,
+            Self::High => 115.0,
         }
     }
 }

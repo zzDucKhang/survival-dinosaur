@@ -18,7 +18,7 @@ impl Plugin for CorePlugin {
             .insert_resource(game_cfg)
             .insert_resource(obstacles)
             .insert_resource(RuntimeSettings {
-                quality: GraphicsQuality::Low, // Mặc định tối ưu 60 FPS cho Intel HD 520
+                quality: GraphicsQuality::Medium, // Cân bằng đồ họa đẹp (đổ bóng + tán cây dày) ở 60+ FPS
                 brightness: 1.25,
                 dino_scale_multiplier: 1.0,
                 night_vision: false,
