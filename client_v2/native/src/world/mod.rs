@@ -4,7 +4,7 @@ pub mod material_fix;
 pub mod terrain;
 pub mod water;
 
-use atmosphere::{setup_atmosphere, update_atmosphere, AtmosphereState};
+use atmosphere::{setup_atmosphere, update_atmosphere, update_sky_and_celestials, AtmosphereState};
 use bevy::prelude::*;
 use foliage::{cull_world_props, spawn_foliage_and_rocks};
 use material_fix::{apply_scene_material_policy, PatchedMaterialCache};
@@ -31,9 +31,11 @@ impl Plugin for WorldPlugin {
                 Update,
                 (
                     update_atmosphere,
+                    update_sky_and_celestials,
                     animate_water_surfaces,
                     cull_world_props,
-                ),
+                )
+                    .chain(),
             );
     }
 }

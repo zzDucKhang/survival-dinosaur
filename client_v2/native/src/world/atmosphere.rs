@@ -43,6 +43,8 @@ pub struct AtmosphereState {
     pub storm_blend: f32,
     pub lightning_flash: f32,
     pub effective_fog_end: f32,
+    pub sky_horizon: [f32; 3],
+    pub sky_zenith: [f32; 3],
     next_lightning_sec: f32,
 }
 
@@ -56,6 +58,8 @@ impl Default for AtmosphereState {
             storm_blend: 0.0,
             lightning_flash: 0.0,
             effective_fog_end: 420.0,
+            sky_horizon: [0.45, 0.61, 0.70],
+            sky_zenith: [0.18, 0.42, 0.72],
             next_lightning_sec: 8.0,
         }
     }
@@ -328,17 +332,29 @@ pub fn update_atmosphere(
     mut atmo: ResMut<AtmosphereState>,
     mut clear_color: ResMut<ClearColor>,
     mut ambient: ResMut<AmbientLight>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-    mut sun_q: Query<(&mut DirectionalLight, &mut Transform), (With<SunMoonLight>, Without<MoonOrb>, Without<SunOrb>, Without<NightVisionLight>, Without<SkyDome>, Without<StarfieldDome>)>,
-    mut sun_orb_q: Query<(&mut Transform, &mut Visibility), (With<SunOrb>, Without<SunMoonLight>, Without<MoonOrb>, Without<NightVisionLight>, Without<SkyDome>, Without<StarfieldDome>)>,
-    mut moon_q: Query<(&mut Transform, &mut Visibility), (With<MoonOrb>, Without<SunMoonLight>, Without<SunOrb>, Without<NightVisionLight>, Without<SkyDome>, Without<StarfieldDome>)>,
-    mut sky_q: Query<(&SkyDome, &mut Transform), (Without<SunMoonLight>, Without<SunOrb>, Without<MoonOrb>, Without<NightVisionLight>, Without<StarfieldDome>)>,
-    mut star_q: Query<(&StarfieldDome, &mut Transform, &mut Visibility), (Without<SunMoonLight>, Without<SunOrb>, Without<MoonOrb>, Without<NightVisionLight>, Without<SkyDome>)>,
-    mut nv_q: Query<(&mut PointLight, &mut Transform, &mut Visibility), (With<NightVisionLight>, Without<SunMoonLight>, Without<SunOrb>, Without<MoonOrb>, Without<SkyDome>, Without<StarfieldDome>)>,
+    mut sun_q: Query<
+        (&mut DirectionalLight, &mut Transform),
+        (
+            With<SunMoonLight>,
+            Without<MoonOrb>,
+            Without<SunOrb>,
+            Without<NightVisionLight>,
+            Without<SkyDome>,
+            Without<StarfieldDome>,
+        ),
+    >,
+    mut nv_q: Query<
+        (&mut PointLight, &mut Transform, &mut Visibility),
+        (
+            With<NightVisionLight>,
+            Without<SunMoonLight>,
+            Without<SunOrb>,
+            Without<MoonOrb>,
+            Without<SkyDome>,
+            Without<StarfieldDome>,
+        ),
+    >,
     mut cam_q: Query<(&mut DistanceFog, Option<&mut Exposure>), With<Camera3d>>,
-    mut sky_timer: Local<f32>,
-    mut prev_star_alpha: Local<f32>,
 ) {
     let dt = time.delta_secs().min(0.1);
     let prof = weather_profile(&net.weather);
@@ -403,6 +419,8 @@ pub fn update_atmosphere(
         horizon = lerp3(horizon, [0.88, 0.94, 1.0], flash * 0.55);
         zenith = lerp3(zenith, [0.75, 0.86, 1.0], flash * 0.45);
     }
+    atmo.sky_horizon = horizon;
+    atmo.sky_zenith = zenith;
     clear_color.0 = Color::srgb(horizon[0], horizon[1], horizon[2]);
 
     // 2. Khoảng cách sương mù & Exposure trên Camera
@@ -440,30 +458,7 @@ pub fn update_atmosphere(
 
     let p = net.local_pos;
 
-    // 4. Bầu trời SkyDome + màu gradient đỉnh trời -> đường chân trời (~12Hz)
-    *sky_timer -= dt;
-    for (sky_dome, mut sky_tf) in &mut sky_q {
-        sky_tf.translation = Vec3::new(p.x, 0.0, p.z);
-        if *sky_timer <= 0.0 {
-            if let Some(mesh) = meshes.get_mut(&sky_dome.mesh_handle) {
-                if let Some(VertexAttributeValues::Float32x4(colors)) =
-                    mesh.attribute_mut(Mesh::ATTRIBUTE_COLOR)
-                {
-                    for (idx, &grad) in sky_dome.vertex_heights.iter().enumerate() {
-                        if idx < colors.len() {
-                            let c = lerp3(horizon, zenith, grad);
-                            colors[idx] = [c[0], c[1], c[2], 1.0];
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if *sky_timer <= 0.0 {
-        *sky_timer = 0.08;
-    }
-
-    // 5. Đèn định hướng Mặt trời / Mặt trăng bám theo người chơi
+    // 4. Đèn định hướng Mặt trời / Mặt trăng bám theo người chơi
     if let Ok((mut light, mut tf)) = sun_q.get_single_mut() {
         light.shadows_enabled = settings.quality != GraphicsQuality::Low;
         if day >= 0.22 {
@@ -497,7 +492,92 @@ pub fn update_atmosphere(
         }
     }
 
-    // 6. Mặt trời, Mặt trăng & Bầu trời sao
+    // 5. Đèn Night Vision [N]
+    if let Ok((mut pt, mut tf, mut vis)) = nv_q.get_single_mut() {
+        let active = nv_strength > 0.02;
+        let desired = if active { Visibility::Visible } else { Visibility::Hidden };
+        if *vis != desired {
+            *vis = desired;
+        }
+        if active {
+            tf.translation = Vec3::new(p.x, p.y + 8.5, p.z);
+            pt.range = nv_radius;
+            pt.intensity = 2_400_000.0 * nv_strength;
+        } else {
+            pt.intensity = 0.0;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn update_sky_and_celestials(
+    time: Res<Time>,
+    net: Res<WorldNetState>,
+    atmo: Res<AtmosphereState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut sun_orb_q: Query<
+        (&mut Transform, &mut Visibility),
+        (
+            With<SunOrb>,
+            Without<MoonOrb>,
+            Without<SkyDome>,
+            Without<StarfieldDome>,
+        ),
+    >,
+    mut moon_q: Query<
+        (&mut Transform, &mut Visibility),
+        (
+            With<MoonOrb>,
+            Without<SunOrb>,
+            Without<SkyDome>,
+            Without<StarfieldDome>,
+        ),
+    >,
+    mut sky_q: Query<
+        (&SkyDome, &mut Transform),
+        (Without<SunOrb>, Without<MoonOrb>, Without<StarfieldDome>),
+    >,
+    mut star_q: Query<
+        (&StarfieldDome, &mut Transform, &mut Visibility),
+        (Without<SunOrb>, Without<MoonOrb>, Without<SkyDome>),
+    >,
+    mut sky_timer: Local<f32>,
+    mut prev_star_alpha: Local<f32>,
+) {
+    let dt = time.delta_secs().min(0.1);
+    let p = net.local_pos;
+    let sun_angle = (net.world_time - 0.25) * std::f32::consts::TAU;
+    let sun_dir = Vec3::new(sun_angle.cos() * 140.0, sun_angle.sin() * 140.0, 60.0);
+    let moon_dir = Vec3::new(-sun_dir.x, -sun_dir.y, -55.0);
+
+    // 1. Bầu trời SkyDome + màu gradient đỉnh trời -> đường chân trời (~12Hz)
+    *sky_timer -= dt;
+    for (sky_dome, mut sky_tf) in &mut sky_q {
+        sky_tf.translation = Vec3::new(p.x, 0.0, p.z);
+        if *sky_timer <= 0.0 {
+            if let Some(mesh) = meshes.get_mut(&sky_dome.mesh_handle) {
+                if let Some(VertexAttributeValues::Float32x4(colors)) =
+                    mesh.attribute_mut(Mesh::ATTRIBUTE_COLOR)
+                {
+                    for (idx, &grad) in sky_dome.vertex_heights.iter().enumerate() {
+                        if idx < colors.len() {
+                            let c = lerp3(atmo.sky_horizon, atmo.sky_zenith, grad);
+                            colors[idx] = [c[0], c[1], c[2], 1.0];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if *sky_timer <= 0.0 {
+        *sky_timer = 0.08;
+    }
+
+    // 2. Mặt trời, Mặt trăng & Bầu trời sao
+    let storm = atmo.storm_blend;
+    let night = atmo.night_factor;
+
     if let Ok((mut tf, mut vis)) = sun_orb_q.get_single_mut() {
         let show_sun = sun_dir.y > -20.0 && storm < 0.7;
         let desired = if show_sun { Visibility::Visible } else { Visibility::Hidden };
@@ -542,22 +622,6 @@ pub fn update_atmosphere(
                     mat.base_color = Color::srgba(0.92, 0.96, 1.0, star_alpha);
                 }
             }
-        }
-    }
-
-    // 7. Đèn Night Vision [N]
-    if let Ok((mut pt, mut tf, mut vis)) = nv_q.get_single_mut() {
-        let active = nv_strength > 0.02;
-        let desired = if active { Visibility::Visible } else { Visibility::Hidden };
-        if *vis != desired {
-            *vis = desired;
-        }
-        if active {
-            tf.translation = Vec3::new(p.x, p.y + 8.5, p.z);
-            pt.range = nv_radius;
-            pt.intensity = 2_400_000.0 * nv_strength;
-        } else {
-            pt.intensity = 0.0;
         }
     }
 }
