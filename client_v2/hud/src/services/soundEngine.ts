@@ -23,13 +23,14 @@ class SoundEngine {
     return this.ctx;
   }
 
-  public playRoar(callType = 1, growth = 0.8): void {
+  public playRoar(callType = 1, growth = 0.8, volume = 1.0): void {
     const ctx = this.getContext();
-    if (!ctx) return;
+    if (!ctx || volume <= 0.02) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const sizePitch = Math.max(0.65, 1.45 - growth * 0.55);
+    const peakGain = Math.max(0.01, Math.min(0.2, 0.18 * volume));
 
     if (callType === 2) {
       osc.type = "triangle";
@@ -51,7 +52,7 @@ class SoundEngine {
     }
 
     gain.gain.setValueAtTime(0.01, now);
-    gain.gain.linearRampToValueAtTime(0.18, now + 0.12);
+    gain.gain.linearRampToValueAtTime(peakGain, now + 0.12);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
     osc.connect(gain);
     gain.connect(ctx.destination);

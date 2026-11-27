@@ -92,6 +92,7 @@ export const LoginScreen: React.FC = () => {
           style={{
             display: "flex",
             justifyContent: "center",
+            alignItems: "center",
             flexWrap: "wrap",
             gap: "8px",
             marginBottom: "16px",
@@ -99,9 +100,27 @@ export const LoginScreen: React.FC = () => {
         >
           <StatusPill
             ok={ipcConnected}
-            okText="Bevy Engine (IPC :9001): Đã kết nối"
-            waitText="Đang chờ dino-isle-native.exe (:9001)..."
+            okText={`Bevy Engine (${ipcSocket.getUrl()}): Đã kết nối`}
+            waitText={`Đang chờ dino-isle-native.exe (${ipcSocket.getUrl()})...`}
           />
+          {!ipcConnected && (
+            <button
+              type="button"
+              onClick={() => ipcSocket.reconnectNow()}
+              style={{
+                padding: "4px 10px",
+                borderRadius: "9999px",
+                border: "1px solid rgba(56, 189, 248, 0.5)",
+                background: "rgba(14, 165, 233, 0.16)",
+                color: "#7dd3fc",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              🔄 Kết nối lại
+            </button>
+          )}
           <StatusPill
             ok={serverConnected}
             okText="Server Go (:8080): Sẵn sàng"
@@ -263,9 +282,11 @@ export const LoginScreen: React.FC = () => {
           >
             {submitting
               ? "ĐANG VÀO ĐẢO..."
-              : ipcConnected
+              : canJoin
                 ? "VÀO SINH TỒN (ENTER THE ISLE)"
-                : "HÃY MỞ DINO-ISLE-NATIVE.EXE TRƯỚC"}
+                : ipcConnected
+                  ? "VÀO CHƠI OFFLINE (CHỜ SERVER :8080)"
+                  : "HÃY MỞ DINO-ISLE-NATIVE.EXE TRƯỚC"}
           </button>
         </form>
       </div>

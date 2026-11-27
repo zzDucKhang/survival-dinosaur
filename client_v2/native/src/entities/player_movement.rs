@@ -14,12 +14,34 @@ use bevy::pbr::NotShadowCaster;
 use bevy::prelude::*;
 use std::f32::consts::FRAC_PI_2;
 
+/// Mesh & Material bóng đất dùng chung cho toàn bộ khủng long (tránh rò rỉ VRAM & giữ batching).
+#[derive(Resource)]
+pub struct DinoSharedAssets {
+    pub shadow_mesh: Handle<Mesh>,
+    pub shadow_mat: Handle<StandardMaterial>,
+}
+
+pub fn init_dino_shared_assets(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    commands.insert_resource(DinoSharedAssets {
+        shadow_mesh: meshes.add(Circle::new(1.35)),
+        shadow_mat: materials.add(StandardMaterial {
+            base_color: Color::srgba(0.0, 0.0, 0.0, 0.34),
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        }),
+    });
+}
+
 pub fn spawn_dino_rig(
     commands: &mut Commands,
     cfg: &GameConfig,
     asset_server: &AssetServer,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<StandardMaterial>,
+    shared_assets: &DinoSharedAssets,
     species_id: &str,
     spawn_pos: Vec3,
     yaw: f32,
@@ -27,14 +49,6 @@ pub fn spawn_dino_rig(
 ) -> (Entity, DinoVisual) {
     let spec = cfg.get_species(species_id);
     let scene_handle: Handle<Scene> = asset_server.load(spec.asset_path());
-
-    let shadow_mesh = meshes.add(Circle::new(1.35));
-    let shadow_mat = materials.add(StandardMaterial {
-        base_color: Color::srgba(0.0, 0.0, 0.0, 0.34),
-        unlit: true,
-        alpha_mode: AlphaMode::Blend,
-        ..default()
-    });
 
     let holder_entity = commands
         .spawn((
@@ -60,8 +74,8 @@ pub fn spawn_dino_rig(
         .spawn((
             Name::new("DinoShadow"),
             DinoGroundShadow,
-            Mesh3d(shadow_mesh),
-            MeshMaterial3d(shadow_mat),
+            Mesh3d(shared_assets.shadow_mesh.clone()),
+            MeshMaterial3d(shared_assets.shadow_mat.clone()),
             Transform::from_xyz(0.0, 0.06, 0.0).with_rotation(Quat::from_rotation_x(-FRAC_PI_2)),
             NotShadowCaster,
         ))
@@ -101,8 +115,7 @@ pub fn spawn_local_player(
     mut commands: Commands,
     cfg: Res<GameConfig>,
     asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    shared_assets: Res<DinoSharedAssets>,
     mut net: ResMut<WorldNetState>,
     mut cam_state: ResMut<OrbitCameraState>,
 ) {
@@ -118,8 +131,7 @@ pub fn spawn_local_player(
         &mut commands,
         &cfg,
         &asset_server,
-        &mut meshes,
-        &mut materials,
+        &shared_assets,
         &net.my_model,
         spawn_pos,
         0.0,
@@ -130,7 +142,12 @@ pub fn spawn_local_player(
         visual,
         LocalPlayer {
             move_sync_accum: 0.0,
+            idle_heartbeat_accum: 0.0,
             hint_check_accum: 0.0,
+            last_sent_x: 0.0,
+            last_sent_z: 0.0,
+            last_sent_rot: 0.0,
+            last_sent_anim: AnimState::Idle,
         },
     ));
 }
@@ -320,7 +337,9 @@ pub fn update_local_player_movement(
 
     if let Ok(mut sh_tf) = shadow_q.get_mut(visual.shadow_entity) {
         let sh = total_mult * (1.0 + visual.rest_blend * 0.18);
-        sh_tf.scale = Vec3::new(sh, sh, 1.0);
+        if (sh_tf.scale.x - sh).abs() > 0.002 {
+            sh_tf.scale = Vec3::new(sh, sh, 1.0);
+        }
     }
 
     // 5. Chọn Animation (One-shot > Rest > Locomotion > Idle)
@@ -369,7 +388,7 @@ pub fn update_local_player_movement(
     local.hint_check_accum += dt;
     if local.hint_check_accum >= 0.25 {
         local.hint_check_accum = 0.0;
-        net.action_hint = if is_resting {
+        let next_hint = if is_resting {
             if rest_unlock_left > 0.0 {
                 Some(format!(
                     "💤 Đang nghỉ ngơi (+20 HP/s) — Mở khóa đứng dậy sau {:.1}s",
@@ -397,6 +416,10 @@ pub fn update_local_player_movement(
                 None
             }
         };
+        if net.action_hint != next_hint {
+            net.action_hint = next_hint;
+            net.telemetry_dirty = true;
+        }
     }
 
     // 7. Tự gỡ điểm ghim bản đồ khi đã tới gần (< 6m)
@@ -404,19 +427,36 @@ pub fn update_local_player_movement(
         let d_sq = Vec2::new(root_tf.translation.x, root_tf.translation.z).distance_squared(wp);
         if d_sq < 36.0 {
             settings.map_waypoint = None;
+            net.telemetry_dirty = true;
         }
     }
 
-    // 8. Đồng bộ vị trí lên Server Go đúng 20Hz (50ms)
+    // 8. Đồng bộ vị trí lên Server Go: 20Hz khi thay đổi vị trí/góc/anim, 4Hz heartbeat khi đứng yên
     local.move_sync_accum += dt;
+    local.idle_heartbeat_accum += dt;
     if !is_resting && local.move_sync_accum >= 0.05 {
-        local.move_sync_accum = 0.0;
-        bridge.send_move(
-            rx,
-            ry,
-            rz,
-            net.local_rot as f64,
-            visual.desired_anim.as_str(),
-        );
+        let pos_changed = (rx - local.last_sent_x).abs() > 0.015
+            || (rz - local.last_sent_z).abs() > 0.015
+            || (net.local_rot - local.last_sent_rot).abs() > 0.005
+            || visual.desired_anim != local.last_sent_anim;
+
+        if pos_changed || local.idle_heartbeat_accum >= 0.25 {
+            local.move_sync_accum -= 0.05;
+            if local.move_sync_accum > 0.05 {
+                local.move_sync_accum = 0.0;
+            }
+            local.idle_heartbeat_accum = 0.0;
+            local.last_sent_x = rx;
+            local.last_sent_z = rz;
+            local.last_sent_rot = net.local_rot;
+            local.last_sent_anim = visual.desired_anim;
+            bridge.send_move(
+                rx,
+                ry,
+                rz,
+                net.local_rot as f64,
+                visual.desired_anim.as_str(),
+            );
+        }
     }
 }

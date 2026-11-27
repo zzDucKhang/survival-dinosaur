@@ -124,7 +124,7 @@ pub fn drive_dino_animations(
     mut commands: Commands,
     registry: Res<DinoAnimationRegistry>,
     children_q: Query<&Children>,
-    dinos_q: Query<&DinoVisual>,
+    dinos_q: Query<(&DinoVisual, Option<&Visibility>)>,
     mut holders_q: Query<(Entity, &mut DinoModelHolder)>,
     mut players_q: Query<(&mut AnimationPlayer, Option<&mut AnimationTransitions>)>,
 ) {
@@ -155,8 +155,8 @@ pub fn drive_dino_animations(
         }
     }
 
-    // 2. Điều khiển chuyển clip theo DinoVisual.desired_anim
-    for dino in &dinos_q {
+    // 2. Điều khiển chuyển clip theo DinoVisual.desired_anim (đóng băng tốc độ khi bị distance-cull)
+    for (dino, vis_opt) in &dinos_q {
         let Ok((_, mut holder)) = holders_q.get_mut(dino.holder_entity) else {
             continue;
         };
@@ -173,7 +173,9 @@ pub fn drive_dino_animations(
             continue;
         };
 
-        if holder.active_anim != Some(dino.desired_anim) {
+        let is_hidden = matches!(vis_opt, Some(Visibility::Hidden));
+
+        if holder.active_anim != Some(dino.desired_anim) && !is_hidden {
             holder.active_anim = Some(dino.desired_anim);
             let active = transitions.play(&mut player, node_idx, Duration::from_millis(140));
             if dino.desired_anim.is_one_shot() {
@@ -182,7 +184,18 @@ pub fn drive_dino_animations(
                 active.repeat().set_speed(dino.anim_speed);
             }
         } else if let Some(active) = player.animation_mut(node_idx) {
-            active.set_speed(dino.anim_speed);
+            if is_hidden {
+                if !active.is_paused() {
+                    active.pause();
+                }
+            } else {
+                if active.is_paused() {
+                    active.resume();
+                }
+                if (active.speed() - dino.anim_speed).abs() > 0.001 {
+                    active.set_speed(dino.anim_speed);
+                }
+            }
         }
     }
 }
@@ -197,8 +210,12 @@ pub fn calibrate_dino_models(
         if holder.calibrated {
             continue;
         }
+        // Chờ SceneInstance tải xong và sinh entity con trước khi đếm frame
+        if children_q.get(holder_entity).is_err() {
+            continue;
+        }
         holder.calibrate_frames = holder.calibrate_frames.saturating_add(1);
-        if holder.calibrate_frames < 4 {
+        if holder.calibrate_frames < 3 {
             continue;
         }
 
@@ -237,7 +254,7 @@ pub fn calibrate_dino_models(
         }
 
         if mesh_count == 0 {
-            if holder.calibrate_frames >= 60 {
+            if holder.calibrate_frames >= 120 {
                 holder.calibrated = true;
             }
             continue;

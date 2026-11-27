@@ -14,6 +14,25 @@ import type { MapWaypoint } from "../../types";
 export const MAP_PX = 600;
 
 let cachedTerrainCanvas: HTMLCanvasElement | null = null;
+let prewarmScheduled = false;
+
+export function scheduleTerrainPrewarm(): void {
+  if (cachedTerrainCanvas || prewarmScheduled || typeof window === "undefined") {
+    return;
+  }
+  prewarmScheduled = true;
+  const run = () => {
+    getOrBuildTerrainCanvas();
+  };
+  const win = window as unknown as {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
+  };
+  if (typeof win.requestIdleCallback === "function") {
+    win.requestIdleCallback(run, { timeout: 1500 });
+  } else {
+    window.setTimeout(run, 350);
+  }
+}
 
 export function worldToMap(wx: number, wz: number): [number, number] {
   const half = MAP_PX / 2;
@@ -40,12 +59,20 @@ export function getOrBuildTerrainCanvas(): HTMLCanvasElement {
   if (!ctx) return offscreen;
 
   const step = 2;
+  const half = MAP_PX / 2;
+  const limit = WORLD_CONFIG.islandLimit;
+  const invScale = limit / half;
   const img = ctx.createImageData(MAP_PX, MAP_PX);
   const data = img.data;
 
   for (let py = 0; py < MAP_PX; py += step) {
+    const wz = Math.round(
+      Math.max(-limit, Math.min(limit, (py + 1 - half) * invScale)),
+    );
     for (let px = 0; px < MAP_PX; px += step) {
-      const [wx, wz] = mapToWorld(px + 1, py + 1);
+      const wx = Math.round(
+        Math.max(-limit, Math.min(limit, (px + 1 - half) * invScale)),
+      );
       const h = getTerrainHeight(wx, wz);
 
       let r = 61;
@@ -197,7 +224,7 @@ export function renderWorldMapFrame(
   }
 
   // 2. Nguồn thức ăn
-  for (const id of Object.keys(foodsMutable)) {
+  for (const id in foodsMutable) {
     const f = foodsMutable[id];
     if (!f || f.amount <= 0) continue;
     const [fx, fy] = worldToMap(f.x, f.z);
@@ -216,7 +243,7 @@ export function renderWorldMapFrame(
   }
 
   // 3. Các sinh vật khác (ưu tiên đồng đội bầy đàn màu xanh dương)
-  for (const id of Object.keys(playersMutable)) {
+  for (const id in playersMutable) {
     if (id === myId) continue;
     const p = playersMutable[id];
     if (!p) continue;

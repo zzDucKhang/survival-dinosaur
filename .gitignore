@@ -1,3 +1,7 @@
 **/target/
 **/node_modules/
 client_v2/hud/dist/
+public/
+client/public/
+*.exe
+*.pdb

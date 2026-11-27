@@ -13,31 +13,32 @@ import {
 export const WorldMapModal: React.FC = () => {
   const isMapOpen = useGameStore((s) => s.isMapOpen);
   const setMapOpen = useGameStore((s) => s.setMapOpen);
-  const myId = useGameStore((s) => s.myId);
   const mapWaypoint = useGameStore((s) => s.mapWaypoint);
   const setMapWaypoint = useGameStore((s) => s.setMapWaypoint);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const coordLabelRef = useRef<HTMLDivElement>(null);
   const [isRound, setIsRound] = useState(false);
-  const [hoverInfo, setHoverInfo] = useState<{
-    x: number;
-    z: number;
-    y: number;
-  } | null>(null);
 
   useEffect(() => {
     if (!isMapOpen) return;
     const bgCanvas = getOrBuildTerrainCanvas();
+    const ctx = canvasRef.current?.getContext("2d") ?? null;
+    if (!ctx) return;
+
     let animId = 0;
     let lastDraw = 0;
 
     const draw = (now: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
       const st = useGameStore.getState();
-      renderWorldMapFrame(ctx, bgCanvas, now, myId, st.packId, st.mapWaypoint);
+      renderWorldMapFrame(
+        ctx,
+        bgCanvas,
+        now,
+        st.myId,
+        st.packId,
+        st.mapWaypoint,
+      );
     };
 
     draw(performance.now());
@@ -50,7 +51,7 @@ export const WorldMapModal: React.FC = () => {
     };
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [isMapOpen, myId]);
+  }, [isMapOpen]);
 
   if (!isMapOpen || typeof document === "undefined") return null;
 
@@ -77,9 +78,15 @@ export const WorldMapModal: React.FC = () => {
   };
 
   const handleMapMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!coordLabelRef.current) return;
     const [wx, wz] = getCoordsFromMouse(e);
     const wy = Math.round(getTerrainHeight(wx, wz) * 10) / 10;
-    setHoverInfo({ x: wx, z: wz, y: wy });
+    coordLabelRef.current.textContent = `Con trỏ: X ${wx} | Z ${wz} | Cao ${wy}m`;
+  };
+
+  const handleMapMouseLeave = () => {
+    if (!coordLabelRef.current) return;
+    coordLabelRef.current.textContent = `Vị trí bạn: X ${Math.round(localTransformMutable.x)} | Z ${Math.round(localTransformMutable.z)}`;
   };
 
   return createPortal(
@@ -212,7 +219,7 @@ export const WorldMapModal: React.FC = () => {
             onClick={handleMapClick}
             onContextMenu={handleMapContextMenu}
             onMouseMove={handleMapMouseMove}
-            onMouseLeave={() => setHoverInfo(null)}
+            onMouseLeave={handleMapMouseLeave}
             style={{
               width: "100%",
               height: "100%",
@@ -238,10 +245,8 @@ export const WorldMapModal: React.FC = () => {
             🟡 Bạn • 🩵 Bầy đàn • 🔴 Người chơi • 🟢 Ăn cỏ • 🟣 Ăn thịt AI • 🩸
             Vệt máu • ♦️ Thịt
           </div>
-          <div style={{ color: "#fde047", fontWeight: 700 }}>
-            {hoverInfo
-              ? `Con trỏ: X ${hoverInfo.x} | Z ${hoverInfo.z} | Cao ${hoverInfo.y}m`
-              : `Vị trí bạn: X ${Math.round(localTransformMutable.x)} | Z ${Math.round(localTransformMutable.z)}`}
+          <div ref={coordLabelRef} style={{ color: "#fde047", fontWeight: 700 }}>
+            {`Vị trí bạn: X ${Math.round(localTransformMutable.x)} | Z ${Math.round(localTransformMutable.z)}`}
           </div>
         </div>
       </div>

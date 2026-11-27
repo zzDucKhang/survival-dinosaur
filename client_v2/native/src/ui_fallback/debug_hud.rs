@@ -1,4 +1,5 @@
 use crate::core::states::{AppState, RuntimeSettings};
+use crate::network::bridge::NetworkBridge;
 use crate::network::sync::WorldNetState;
 use bevy::prelude::*;
 
@@ -41,6 +42,7 @@ pub fn update_debug_hud(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     app_state: Res<State<AppState>>,
+    bridge: Res<NetworkBridge>,
     net: Res<WorldNetState>,
     settings: Res<RuntimeSettings>,
     mut root_q: Query<&mut Visibility, With<DebugHudRoot>>,
@@ -79,16 +81,17 @@ pub fn update_debug_hud(
     };
 
     let conn = if net.server_connected { "ONLINE" } else { "OFFLINE" };
+    let hud_cnt = bridge.hud_client_count();
     let total_mins = (net.world_time * 24.0 * 60.0) as u32;
     let hh = (total_mins / 60) % 24;
     let mm = total_mins % 60;
 
     if *app_state.get() == AppState::Lobby {
         text.0 = format!(
-            "DINO ISLE NATIVE | {:.0} FPS | Go :8080 [{}]\n\
+            "DINO ISLE NATIVE | {:.0} FPS | Go :8080 [{}] | HUD :9001 [{}]\n\
              Trang thai: LOBBY | Gio {:02}:{:02} | Thoi tiet: {}\n\
-             Nhan [Enter] de vao test nhanh (hoac ket noi React HUD :9001) | [F3] An/Hien",
-            *smooth_fps, conn, hh, mm, net.weather
+             Nhan [Enter] de vao test nhanh (hoac mo React HUD :5173) | [F3] An/Hien",
+            *smooth_fps, conn, hud_cnt, hh, mm, net.weather
         );
         return;
     }

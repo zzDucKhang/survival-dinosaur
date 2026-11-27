@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { scheduleTerrainPrewarm } from "../features/map/mapRenderer";
 import type {
   BloodTrail,
   ChatMessage,
@@ -14,6 +15,7 @@ import {
   foodsMutable,
   localTransformMutable,
   playersMutable,
+  syncGuardsMutable,
   worldTimeMutable,
 } from "./mutableCache";
 import {
@@ -71,41 +73,61 @@ export const useGameStore = create<GameStore>()((...a) => {
       localTransformMutable.z = msg.z;
       localTransformMutable.rot = msg.rot;
 
+      const now = performance.now();
       const s = get();
       const patch: Partial<GameStore> = {};
 
       if (msg.serverConnected !== s.serverConnected)
         patch.serverConnected = msg.serverConnected;
-      if (msg.isJoined !== s.isJoined) patch.isJoined = msg.isJoined;
-      if (msg.myId && msg.myId !== s.myId) patch.myId = msg.myId;
+
+      if (now >= syncGuardsMutable.leaveIgnoreUntil) {
+        if (msg.isJoined !== s.isJoined) {
+          patch.isJoined = msg.isJoined;
+          if (msg.isJoined) {
+            scheduleTerrainPrewarm();
+          }
+        }
+        if (msg.myId && msg.myId !== s.myId) {
+          patch.myId = msg.myId;
+        } else if (!msg.isJoined && msg.myId === null && s.myId !== null) {
+          patch.myId = null;
+        }
+      }
+
       if (msg.myName && msg.myName !== s.myName) patch.myName = msg.myName;
       if (msg.myModel && msg.myModel !== s.selectedModel)
         patch.selectedModel = msg.myModel;
       if (Math.round(msg.stamina) !== s.stamina)
         patch.stamina = Math.round(msg.stamina);
       if (msg.fps !== s.fps) patch.fps = msg.fps;
-      if (msg.nightVision !== s.nightVision)
-        patch.nightVision = msg.nightVision;
-      if (msg.scentRemaining !== s.scentRemaining)
-        patch.scentRemaining = msg.scentRemaining;
-      if (msg.quality !== s.graphicsQuality)
-        patch.graphicsQuality = msg.quality;
-      if (Math.abs(msg.brightness - s.brightness) > 0.01)
-        patch.brightness = msg.brightness;
-      if (Math.abs(msg.dinoScale - s.dinoScaleMultiplier) > 0.01) {
-        patch.dinoScaleMultiplier = msg.dinoScale;
-      }
       if (msg.actionHint !== s.actionHint) patch.actionHint = msg.actionHint;
 
-      const wp = msg.waypoint
-        ? { x: msg.waypoint[0], z: msg.waypoint[1] }
-        : null;
-      if (
-        (wp === null && s.mapWaypoint !== null) ||
-        (wp !== null &&
-          (s.mapWaypoint?.x !== wp.x || s.mapWaypoint?.z !== wp.z))
-      ) {
-        patch.mapWaypoint = wp;
+      if (now >= syncGuardsMutable.settingsIgnoreUntil) {
+        if (msg.nightVision !== s.nightVision)
+          patch.nightVision = msg.nightVision;
+        if (msg.quality !== s.graphicsQuality)
+          patch.graphicsQuality = msg.quality;
+        if (Math.abs(msg.brightness - s.brightness) > 0.01)
+          patch.brightness = msg.brightness;
+        if (Math.abs(msg.dinoScale - s.dinoScaleMultiplier) > 0.01) {
+          patch.dinoScaleMultiplier = msg.dinoScale;
+        }
+      }
+
+      if (msg.scentRemaining !== s.scentRemaining)
+        patch.scentRemaining = msg.scentRemaining;
+
+      if (now >= syncGuardsMutable.waypointIgnoreUntil) {
+        const wp = msg.waypoint
+          ? { x: msg.waypoint[0], z: msg.waypoint[1] }
+          : null;
+        if (
+          (wp === null && s.mapWaypoint !== null) ||
+          (wp !== null &&
+            (s.mapWaypoint?.x !== wp.x || s.mapWaypoint?.z !== wp.z))
+        ) {
+          patch.mapWaypoint = wp;
+        }
       }
 
       if (Object.keys(patch).length > 0) {
@@ -134,12 +156,13 @@ export const useGameStore = create<GameStore>()((...a) => {
       }
 
       if (players) {
-        const incomingIds = Object.keys(players);
-        for (const key of Object.keys(playersMutable)) {
+        for (const key in playersMutable) {
           if (!(key in players)) delete playersMutable[key];
         }
-        for (const id of incomingIds) {
+        const incomingIds: string[] = [];
+        for (const id in players) {
           playersMutable[id] = players[id];
+          incomingIds.push(id);
         }
 
         const myId = state.myId;
@@ -232,12 +255,13 @@ export const useGameStore = create<GameStore>()((...a) => {
       }
 
       if (foods) {
-        const incomingFoodIds = Object.keys(foods);
-        for (const key of Object.keys(foodsMutable)) {
+        for (const key in foodsMutable) {
           if (!(key in foods)) delete foodsMutable[key];
         }
-        for (const id of incomingFoodIds) {
+        const incomingFoodIds: string[] = [];
+        for (const id in foods) {
           foodsMutable[id] = foods[id];
+          incomingFoodIds.push(id);
         }
         if (!arraysEqual(state.foodIds, incomingFoodIds)) {
           patch.foodIds = incomingFoodIds;

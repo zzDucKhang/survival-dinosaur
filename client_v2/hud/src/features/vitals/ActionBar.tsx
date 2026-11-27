@@ -30,6 +30,7 @@ export const ActionBar: React.FC = () => {
   const handleSpecialClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.currentTarget.blur();
     if (!canUseSpecial) return;
+    ipcSocket.markLocalSpecialAudio();
     ipcSocket.sendSpecial();
     soundEngine.playSpecial();
   };

@@ -1,6 +1,7 @@
 import type { StateCreator } from "zustand";
 import type { ChatMessage, MapWaypoint, WeatherType } from "../../types";
 import { ipcSocket } from "../../services/ipcSocket";
+import { syncGuardsMutable } from "../mutableCache";
 import type { GameStore } from "../useGameStore";
 
 export interface WorldSlice {
@@ -27,6 +28,7 @@ export const createWorldSlice: StateCreator<GameStore, [], [], WorldSlice> = (
   chatMessages: [],
 
   setMapWaypoint: (wp) => {
+    syncGuardsMutable.waypointIgnoreUntil = performance.now() + 400;
     set({ mapWaypoint: wp });
     if (wp) {
       ipcSocket.setWaypoint(wp.x, wp.z);

@@ -1,4 +1,5 @@
 import type { GraphicsQuality, IpcInboundMessage } from "../types";
+import { localTransformMutable } from "../store/mutableCache";
 import { useGameStore } from "../store/useGameStore";
 import { soundEngine } from "./soundEngine";
 
@@ -6,7 +7,9 @@ class NativeIpcSocket {
   private ws: WebSocket | null = null;
   private url: string;
   private reconnectTimer: number | null = null;
+  private reconnectAttempt = 0;
   private intentionalClose = false;
+  private lastLocalSpecialAt = 0;
 
   constructor() {
     const params =
@@ -14,6 +17,23 @@ class NativeIpcSocket {
         ? new URLSearchParams(window.location.search)
         : null;
     this.url = params?.get("ipc") || "ws://127.0.0.1:9001";
+  }
+
+  public getUrl(): string {
+    return this.url;
+  }
+
+  public markLocalSpecialAudio(): void {
+    this.lastLocalSpecialAt = performance.now();
+  }
+
+  public reconnectNow(): void {
+    if (this.reconnectTimer !== null) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempt = 0;
+    this.connect();
   }
 
   public connect(): void {
@@ -38,8 +58,10 @@ class NativeIpcSocket {
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
+      this.reconnectAttempt = 0;
       console.log("[IPC] Connected to", this.url);
       useGameStore.getState().setIpcConnected(true);
+      this.setUiFocus(false);
     };
 
     ws.onmessage = (event) => {
@@ -47,10 +69,21 @@ class NativeIpcSocket {
       const raw = typeof event.data === "string" ? event.data : "";
       if (!raw) return;
 
-      for (const line of raw.split("\n")) {
-        if (!line.trim()) continue;
+      if (!raw.includes("\n")) {
         try {
-          const msg = JSON.parse(line) as IpcInboundMessage;
+          const msg = JSON.parse(raw) as IpcInboundMessage;
+          this.handleMessage(msg);
+        } catch {
+          // Bỏ qua gói tin hỏng
+        }
+        return;
+      }
+
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const msg = JSON.parse(trimmed) as IpcInboundMessage;
           this.handleMessage(msg);
         } catch {
           // Bỏ qua gói tin hỏng
@@ -98,13 +131,35 @@ class NativeIpcSocket {
 
     if (msg.type === "SYNC") {
       if (msg.events && msg.events.length > 0) {
+        let playedBite = false;
+        let playedSpecial = false;
+        const now = performance.now();
+
         for (const ev of msg.events) {
           if (ev.attackType === "roar") {
-            soundEngine.playRoar(ev.damage, store.growth);
+            const dist = Math.hypot(
+              ev.x - localTransformMutable.x,
+              ev.z - localTransformMutable.z,
+            );
+            if (dist <= 220) {
+              const vol =
+                dist <= 25 ? 1.0 : Math.max(0.12, 1.0 - (dist - 25) / 195);
+              soundEngine.playRoar(ev.damage, store.growth, vol);
+            }
           } else if (ev.attackerId === store.myId) {
-            if (ev.attackType === "special" || ev.attackType === "bonebreak") {
-              soundEngine.playSpecial();
-            } else if (ev.attackType === "bite" || ev.attackType === "tail") {
+            if (
+              !playedSpecial &&
+              (ev.attackType === "special" || ev.attackType === "bonebreak")
+            ) {
+              playedSpecial = true;
+              if (now - this.lastLocalSpecialAt > 250) {
+                soundEngine.playSpecial();
+              }
+            } else if (
+              !playedBite &&
+              (ev.attackType === "bite" || ev.attackType === "tail")
+            ) {
+              playedBite = true;
               soundEngine.playBite();
             }
           }
@@ -125,10 +180,13 @@ class NativeIpcSocket {
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer !== null) return;
+    const delays = [500, 1000, 1500];
+    const delay = delays[Math.min(this.reconnectAttempt, delays.length - 1)];
+    this.reconnectAttempt++;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, 1500);
+    }, delay);
   }
 
   private sendUnit(type: string): void {

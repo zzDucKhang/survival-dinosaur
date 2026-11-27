@@ -29,6 +29,8 @@ fn resolve_assets_dir() -> String {
         "../../client/public",
         "../client/public",
         "public",
+        "../../public",
+        "../public",
     ];
     for c in candidates {
         if Path::new(c).is_dir() {

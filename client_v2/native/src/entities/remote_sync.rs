@@ -2,7 +2,7 @@ use super::components::{
     AnimState, DinoGroundShadow, DinoModelHolder, DinoSlopePivot, DinoVisual, LocalPlayer,
     RemotePlayer,
 };
-use super::player_movement::spawn_dino_rig;
+use super::player_movement::{spawn_dino_rig, DinoSharedAssets};
 use crate::core::config::GameConfig;
 use crate::core::math_terrain::{
     calc_growth_visual_scale, get_entity_ground_height, get_terrain_slope,
@@ -23,11 +23,10 @@ pub fn sync_remote_entities(
     mut commands: Commands,
     time: Res<Time>,
     cfg: Res<GameConfig>,
-    net: Res<WorldNetState>,
+    mut net: ResMut<WorldNetState>,
     settings: Res<RuntimeSettings>,
     asset_server: Res<AssetServer>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    shared_assets: Res<DinoSharedAssets>,
     mut registry: ResMut<RemoteEntityRegistry>,
     mut remote_q: Query<
         (&mut Transform, &mut Visibility, &mut DinoVisual, &mut RemotePlayer),
@@ -47,60 +46,63 @@ pub fn sync_remote_entities(
     >,
 ) {
     let dt = time.delta_secs().min(0.1);
-    let my_id = net.my_id.as_deref();
-    let my_pack = net.local_player().map(|p| p.pack_id.as_str()).unwrap_or("");
 
-    // 1. Gỡ các entity đã rời phòng hoặc đổi loài
-    let stale_ids: Vec<String> = registry
-        .entries
-        .iter()
-        .filter(|(id, (_, model))| {
-            if Some(id.as_str()) == my_id {
-                return true;
+    if net.players_dirty {
+        net.players_dirty = false;
+        let my_id = net.my_id.as_deref();
+
+        // 1. Gỡ các entity đã rời phòng hoặc đổi loài
+        let stale_ids: Vec<String> = registry
+            .entries
+            .iter()
+            .filter(|(id, (_, model))| {
+                if Some(id.as_str()) == my_id {
+                    return true;
+                }
+                match net.players.get(*id) {
+                    None => true,
+                    Some(p) => !p.model.eq_ignore_ascii_case(model),
+                }
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+
+        for id in stale_ids {
+            if let Some((entity, _)) = registry.entries.remove(&id) {
+                commands.entity(entity).despawn_recursive();
             }
-            match net.players.get(*id) {
-                None => true,
-                Some(p) => !p.model.eq_ignore_ascii_case(model),
+        }
+
+        // 2. Spawn các người chơi khác & AI Bot mới xuất hiện
+        for (id, p) in &net.players {
+            if Some(id.as_str()) == my_id || registry.entries.contains_key(id) {
+                continue;
             }
-        })
-        .map(|(id, _)| id.clone())
-        .collect();
-
-    for id in stale_ids {
-        if let Some((entity, _)) = registry.entries.remove(&id) {
-            commands.entity(entity).despawn_recursive();
+            let y = get_entity_ground_height(p.x, p.z, &cfg.world) as f32;
+            let growth = if p.growth > 0.0 { p.growth as f32 } else { 0.9 };
+            let (root, visual) = spawn_dino_rig(
+                &mut commands,
+                &cfg,
+                &asset_server,
+                &shared_assets,
+                &p.model,
+                Vec3::new(p.x as f32, y, p.z as f32),
+                p.rot as f32,
+                growth,
+            );
+            commands.entity(root).insert((
+                visual,
+                RemotePlayer {
+                    network_id: id.clone(),
+                    was_culled: false,
+                },
+            ));
+            registry.entries.insert(id.clone(), (root, p.model.clone()));
         }
-    }
-
-    // 2. Spawn các người chơi khác & 12 AI Bot mới xuất hiện
-    for (id, p) in &net.players {
-        if Some(id.as_str()) == my_id || registry.entries.contains_key(id) {
-            continue;
-        }
-        let y = get_entity_ground_height(p.x, p.z, &cfg.world) as f32;
-        let growth = if p.growth > 0.0 { p.growth as f32 } else { 0.9 };
-        let (root, visual) = spawn_dino_rig(
-            &mut commands,
-            &cfg,
-            &asset_server,
-            &mut meshes,
-            &mut materials,
-            &p.model,
-            Vec3::new(p.x as f32, y, p.z as f32),
-            p.rot as f32,
-            growth,
-        );
-        commands.entity(root).insert((
-            visual,
-            RemotePlayer {
-                network_id: id.clone(),
-                was_culled: false,
-            },
-        ));
-        registry.entries.insert(id.clone(), (root, p.model.clone()));
     }
 
     // 3. Nội suy chuyển động + Distance Culling (> 150m, đồng đội > 280m)
+    let my_pack = net.local_player().map(|p| p.pack_id.as_str()).unwrap_or("");
     let me_xz = Vec2::new(net.local_pos.x, net.local_pos.z);
 
     for (mut root_tf, mut vis, mut visual, mut remote) in &mut remote_q {
@@ -185,7 +187,9 @@ pub fn sync_remote_entities(
         }
 
         if let Ok(mut sh_tf) = shadow_q.get_mut(visual.shadow_entity) {
-            sh_tf.scale = Vec3::new(visual_mult, visual_mult, 1.0);
+            if (sh_tf.scale.x - visual_mult).abs() > 0.002 {
+                sh_tf.scale = Vec3::new(visual_mult, visual_mult, 1.0);
+            }
         }
 
         visual.desired_anim = if p.is_resting {

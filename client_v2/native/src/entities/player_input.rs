@@ -11,10 +11,13 @@ use std::f32::consts::FRAC_PI_2;
 pub fn handle_lobby_quick_join(
     keys: Res<ButtonInput<KeyCode>>,
     bridge: Res<NetworkBridge>,
-    net: Res<WorldNetState>,
+    mut net: ResMut<WorldNetState>,
     mut next_state: ResMut<NextState<AppState>>,
 ) {
     if keys.just_pressed(KeyCode::Enter) {
+        net.my_id = None;
+        net.last_respawn_seq = 0;
+        net.telemetry_dirty = true;
         bridge.send_join(&net.my_name, &net.my_model);
         next_state.set(AppState::InGame);
     }
@@ -36,6 +39,7 @@ pub fn handle_player_input(
 
     if settings.input_blocked_by_ui {
         input.clear_movement();
+        special_evts.clear();
         return;
     }
 
@@ -56,6 +60,7 @@ pub fn handle_player_input(
     }
     if keys.just_pressed(KeyCode::KeyN) {
         settings.night_vision = !settings.night_vision;
+        net.telemetry_dirty = true;
     }
     if keys.just_pressed(KeyCode::KeyT) {
         let key = net.my_model.to_lowercase();
@@ -65,9 +70,11 @@ pub fn handle_player_input(
     }
     if keys.just_pressed(KeyCode::BracketLeft) {
         settings.dino_scale_multiplier = (settings.dino_scale_multiplier - 0.1).clamp(0.3, 2.5);
+        net.telemetry_dirty = true;
     }
     if keys.just_pressed(KeyCode::BracketRight) {
         settings.dino_scale_multiplier = (settings.dino_scale_multiplier + 0.1).clamp(0.3, 2.5);
+        net.telemetry_dirty = true;
     }
 
     // 2. Khi đang nghỉ ngơi -> khóa toàn bộ di chuyển & chiến đấu
@@ -130,6 +137,7 @@ pub fn handle_player_input(
     }
     if keys.just_pressed(KeyCode::KeyQ) {
         settings.scent_remaining_sec = 6.5;
+        net.telemetry_dirty = true;
     }
 
     if keys.just_pressed(KeyCode::KeyR) || keys.just_pressed(KeyCode::Digit1) {

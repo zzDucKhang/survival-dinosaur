@@ -11,6 +11,7 @@ pub enum CullTier {
     Tree,
     Rock,
     Detail,
+    Item,
 }
 
 /// Gắn lên bất kỳ vật thể môi trường nào (cây, đá, dương xỉ, bụi cỏ, tổ trứng...) để tự động culling 60 FPS.
@@ -19,6 +20,7 @@ pub struct DistanceCulled {
     pub world_xz: Vec2,
     pub tier: CullTier,
     pub extra_radius: f32,
+    pub density_rank: f32,
 }
 
 struct FoliageLayerSpec {
@@ -69,6 +71,7 @@ pub fn spawn_foliage_and_rocks(
                 world_xz: Vec2::new(rock.x as f32, rock.z as f32),
                 tier: CullTier::Rock,
                 extra_radius: rock.radius as f32,
+                density_rank: 0.0,
             },
             Transform::from_xyz(rock.x as f32, ground_y - 0.35, rock.z as f32)
                 .with_rotation(Quat::from_rotation_y(rock.rot))
@@ -178,6 +181,7 @@ pub fn spawn_foliage_and_rocks(
                     world_xz: Vec2::new(x as f32, z as f32),
                     tier: layer.tier,
                     extra_radius: if layer.tier == CullTier::Tree { 8.0 } else { 2.0 },
+                    density_rank: ((i * 37) % 100) as f32 / 100.0,
                 },
                 Transform::from_xyz(x as f32, (y as f32) - layer.sink_y, z as f32)
                     .with_rotation(rot)
@@ -238,6 +242,7 @@ fn spawn_shore_ring(
                     world_xz: Vec2::new(x as f32, z as f32),
                     tier: CullTier::Detail,
                     extra_radius: 2.0,
+                    density_rank: ((i * 37) % 100) as f32 / 100.0,
                 },
                 Transform::from_xyz(x as f32, (y as f32) - 0.04, z as f32)
                     .with_rotation(Quat::from_rotation_y(a as f32))
@@ -247,7 +252,7 @@ fn spawn_shore_ring(
     }
 }
 
-/// Hệ thống Distance Culling có tiết lưu (chạy tối đa 10Hz) + tự cắt tầm vẽ theo sương mù / Night Vision.
+/// Hệ thống Distance + Density Culling có tiết lưu (chạy tối đa ~8Hz) + tự cắt tầm vẽ theo sương mù / Quality.
 pub fn cull_world_props(
     time: Res<Time>,
     net: Res<WorldNetState>,
@@ -260,7 +265,7 @@ pub fn cull_world_props(
     let player_xz = Vec2::new(net.local_pos.x, net.local_pos.z);
     *timer += time.delta_secs();
     let moved_sq = player_xz.distance_squared(*last_pos);
-    if *timer < 0.12 && moved_sq < 12.25 {
+    if *timer < 0.12 && moved_sq < 12.25 && !settings.is_changed() {
         return;
     }
     *timer = 0.0;
@@ -270,17 +275,26 @@ pub fn cull_world_props(
     let tree_max = settings.quality.tree_cull_dist().min(fog_cap);
     let rock_max = (tree_max * 0.85).min(fog_cap);
     let detail_max = settings.quality.detail_cull_dist().min(fog_cap * 0.85);
+    let item_max = (tree_max * 0.95).min(fog_cap);
+    let density_limit = settings.quality.foliage_density();
 
     for (prop, mut vis) in &mut props {
-        let max_d = match prop.tier {
-            CullTier::Tree => tree_max,
-            CullTier::Rock => rock_max,
-            CullTier::Detail => detail_max,
-        } + prop.extra_radius;
-
-        let dist_sq = prop.world_xz.distance_squared(player_xz);
-        let desired = if dist_sq <= max_d * max_d {
-            Visibility::Inherited
+        let within_density = match prop.tier {
+            CullTier::Tree | CullTier::Detail => prop.density_rank <= density_limit,
+            CullTier::Rock | CullTier::Item => true,
+        };
+        let desired = if within_density {
+            let max_d = match prop.tier {
+                CullTier::Tree => tree_max,
+                CullTier::Rock => rock_max,
+                CullTier::Detail => detail_max,
+                CullTier::Item => item_max,
+            } + prop.extra_radius;
+            if prop.world_xz.distance_squared(player_xz) <= max_d * max_d {
+                Visibility::Inherited
+            } else {
+                Visibility::Hidden
+            }
         } else {
             Visibility::Hidden
         };

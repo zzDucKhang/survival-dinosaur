@@ -16,6 +16,11 @@ pub fn spawn_main_camera(mut commands: Commands) {
         Name::new("MainCamera"),
         MainCamera,
         Camera3d::default(),
+        Msaa::Off,
+        Projection::Perspective(PerspectiveProjection {
+            far: 480.0,
+            ..default()
+        }),
         Exposure::default(),
         DistanceFog {
             color: Color::srgb(0.45, 0.61, 0.70),

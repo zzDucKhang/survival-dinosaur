@@ -85,6 +85,7 @@ pub fn animate_water_surfaces(
     water_reg: Option<Res<WaterRegistry>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut surfaces: Query<(&WaterSurface, &mut Transform)>,
+    mut mat_timer: Local<f32>,
 ) {
     let Some(reg) = water_reg else {
         return;
@@ -95,6 +96,12 @@ pub fn animate_water_surfaces(
     for (surf, mut tf) in &mut surfaces {
         tf.translation.y = surf.base_y + (t * 1.5 + surf.phase).sin() * wave_amp;
     }
+
+    *mat_timer -= time.delta_secs();
+    if *mat_timer > 0.0 {
+        return;
+    }
+    *mat_timer = 0.125;
 
     if let Some(mat) = materials.get_mut(&reg.shared_material) {
         let day_col = [

@@ -81,7 +81,12 @@ pub struct DinoModelHolder {
 #[derive(Component)]
 pub struct LocalPlayer {
     pub move_sync_accum: f32,
+    pub idle_heartbeat_accum: f32,
     pub hint_check_accum: f32,
+    pub last_sent_x: f64,
+    pub last_sent_z: f64,
+    pub last_sent_rot: f32,
+    pub last_sent_anim: AnimState,
 }
 
 #[derive(Component)]

@@ -60,6 +60,9 @@ func (r *WSRouter) HandleMessage(
 		}
 		log.Printf("[Router] Player joined: %s (%s) model=%s", name, clientID, modelType)
 
+	case "LEAVE":
+		r.engine.RemovePlayer(clientID)
+
 	case "MOVE":
 		var payload protocol.MovePayload
 		if err := json.Unmarshal(inbound.Payload, &payload); err == nil {

@@ -14,7 +14,9 @@ use bevy::prelude::*;
 use camera::{spawn_main_camera, update_orbit_camera};
 use components::{LocalInputState, OrbitCameraState};
 use player_input::{handle_lobby_quick_join, handle_player_input};
-use player_movement::{despawn_local_player, spawn_local_player, update_local_player_movement};
+use player_movement::{
+    despawn_local_player, init_dino_shared_assets, spawn_local_player, update_local_player_movement,
+};
 use remote_sync::{sync_remote_entities, RemoteEntityRegistry};
 use world_items::{init_world_item_assets, sync_world_items, WorldItemRegistry};
 
@@ -34,6 +36,7 @@ impl Plugin for EntitiesPlugin {
                 (
                     preload_species_gltfs,
                     spawn_main_camera,
+                    init_dino_shared_assets,
                     init_world_item_assets,
                 ),
             )

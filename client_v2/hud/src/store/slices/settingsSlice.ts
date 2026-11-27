@@ -2,6 +2,7 @@ import type { StateCreator } from "zustand";
 import type { GraphicsQuality } from "../../types";
 import { ipcSocket } from "../../services/ipcSocket";
 import { soundEngine } from "../../services/soundEngine";
+import { syncGuardsMutable } from "../mutableCache";
 import type { GameStore } from "../useGameStore";
 
 export interface SettingsSlice {
@@ -32,22 +33,26 @@ export const createSettingsSlice: StateCreator<
   soundEnabled: true,
 
   toggleNightVision: () => {
+    syncGuardsMutable.settingsIgnoreUntil = performance.now() + 400;
     set({ nightVision: !get().nightVision });
     ipcSocket.toggleNightVision();
   },
 
   setBrightness: (val) => {
+    syncGuardsMutable.settingsIgnoreUntil = performance.now() + 400;
     const clamped = Math.round(Math.max(0.8, Math.min(2.2, val)) * 100) / 100;
     set({ brightness: clamped });
     ipcSocket.setBrightness(clamped);
   },
 
   setGraphicsQuality: (q) => {
+    syncGuardsMutable.settingsIgnoreUntil = performance.now() + 400;
     set({ graphicsQuality: q });
     ipcSocket.setQuality(q);
   },
 
   setDinoScaleMultiplier: (val) => {
+    syncGuardsMutable.settingsIgnoreUntil = performance.now() + 400;
     const clamped = Math.round(Math.max(0.3, Math.min(2.5, val)) * 10) / 10;
     set({ dinoScaleMultiplier: clamped });
     ipcSocket.setDinoScale(clamped);

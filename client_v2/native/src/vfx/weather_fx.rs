@@ -81,6 +81,7 @@ pub fn spawn_weather_fx(
     ));
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_weather_fx(
     time: Res<Time>,
     net: Res<WorldNetState>,
@@ -89,6 +90,7 @@ pub fn update_weather_fx(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut rain_q: Query<(&RainSheetMesh, &mut Visibility)>,
+    mut prev_storm: Local<Option<bool>>,
 ) {
     let Ok((sheet, mut vis)) = rain_q.get_single_mut() else {
         return;
@@ -120,9 +122,12 @@ pub fn update_weather_fx(
     let half_w = 0.035;
     let p = net.local_pos;
 
-    if let Some(mat) = materials.get_mut(&sheet.mat_handle) {
-        let alpha = if is_storm { 0.44 } else { 0.30 };
-        mat.base_color = Color::srgba(0.80, 0.86, 0.94, alpha);
+    if *prev_storm != Some(is_storm) {
+        *prev_storm = Some(is_storm);
+        if let Some(mat) = materials.get_mut(&sheet.mat_handle) {
+            let alpha = if is_storm { 0.44 } else { 0.30 };
+            mat.base_color = Color::srgba(0.80, 0.86, 0.94, alpha);
+        }
     }
 
     let Some(mesh) = meshes.get_mut(&sheet.mesh_handle) else {
