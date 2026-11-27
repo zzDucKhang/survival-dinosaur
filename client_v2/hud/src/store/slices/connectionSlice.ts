@@ -1,6 +1,12 @@
 import type { StateCreator } from "zustand";
 import type { DinoModelType } from "../../types";
-import { syncGuardsMutable } from "../mutableCache";
+import {
+  bloodTrailsMutable,
+  combatEventsQueue,
+  foodsMutable,
+  playersMutable,
+  syncGuardsMutable,
+} from "../mutableCache";
 import type { GameStore } from "../useGameStore";
 
 export interface ConnectionSlice {
@@ -49,14 +55,25 @@ export const createConnectionSlice: StateCreator<
       return;
     }
     syncGuardsMutable.leaveIgnoreUntil = performance.now() + 450;
+    for (const k in playersMutable) delete playersMutable[k];
+    for (const k in foodsMutable) delete foodsMutable[k];
+    bloodTrailsMutable.length = 0;
+    combatEventsQueue.length = 0;
     set({
       isJoined: false,
       myId: null,
       respawnSeq: 0,
+      stamina: 100,
       health: 100,
       maxHealth: 100,
+      hunger: 90,
+      thirst: 90,
+      growth: 0.45,
       kills: 0,
       bleed: 0,
+      playerIds: [],
+      foodIds: [],
+      bloodTrailsVersion: 0,
       actionHint: null,
       isResting: false,
       restUnlockLeft: 0,

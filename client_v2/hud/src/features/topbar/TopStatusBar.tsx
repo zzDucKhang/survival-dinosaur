@@ -90,9 +90,11 @@ export const TopStatusBar: React.FC = () => {
         position: "absolute",
         top: "14px",
         left: "16px",
+        maxWidth: "calc(100vw - 32px)",
         display: "flex",
         alignItems: "center",
-        flexWrap: "wrap",
+        flexWrap: "nowrap",
+        overflowX: "auto",
         gap: "8px",
         pointerEvents: "auto",
       }}
@@ -166,7 +168,7 @@ export const TopStatusBar: React.FC = () => {
         className="hud-glass"
         style={{
           height: "38px",
-          background: "rgba(11, 18, 32, 0.80)",
+          background: "rgba(11, 18, 32, 0.88)",
           border: "1px solid var(--border-subtle)",
           borderRadius: "10px",
           padding: "0 14px",
@@ -175,6 +177,8 @@ export const TopStatusBar: React.FC = () => {
           gap: "11px",
           fontSize: "12px",
           fontWeight: 700,
+          whiteSpace: "nowrap",
+          flexShrink: 0,
           boxShadow: "0 6px 16px rgba(0,0,0,0.4)",
         }}
       >

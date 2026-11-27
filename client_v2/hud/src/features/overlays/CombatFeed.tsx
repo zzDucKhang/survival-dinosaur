@@ -102,12 +102,12 @@ export const CombatFeed: React.FC = () => {
       style={{
         position: "absolute",
         bottom: "22px",
-        left: "20px",
+        left: "16px",
         display: "flex",
         flexDirection: "column-reverse",
         gap: "6px",
         pointerEvents: "none",
-        maxWidth: "290px",
+        maxWidth: "clamp(170px, calc(50vw - 255px), 270px)",
       }}
     >
       {items.map((item) => (

@@ -52,9 +52,9 @@ export const ChatBox: React.FC = () => {
     <div
       style={{
         position: "absolute",
-        top: "14px",
+        top: "64px",
         right: "16px",
-        width: "310px",
+        width: "min(300px, calc(100vw - 32px))",
         pointerEvents: "auto",
         display: "flex",
         flexDirection: "column",

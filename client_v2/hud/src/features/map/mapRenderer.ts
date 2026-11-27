@@ -11,6 +11,44 @@ import {
 } from "../../store/mutableCache";
 import type { MapWaypoint } from "../../types";
 
+interface LabelRect {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+const LANDMARK_BOXES: LabelRect[] = [];
+
+function drawLabelPill(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  baselineY: number,
+  color: string,
+  font = "600 11px Inter, system-ui, sans-serif",
+): LabelRect {
+  ctx.font = font;
+  ctx.textAlign = "center";
+  const w = ctx.measureText(text).width + 10;
+  const h = 16;
+  const rx = Math.max(4, Math.min(MAP_PX - w - 4, cx - w / 2));
+  const ry = Math.max(4, Math.min(MAP_PX - h - 4, baselineY - 12));
+
+  ctx.fillStyle = "rgba(2, 6, 23, 0.74)";
+  ctx.beginPath();
+  ctx.roundRect(rx, ry, w, h, 4);
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.fillText(text, rx + w / 2, ry + 12);
+  return { x1: rx - 2, y1: ry - 2, x2: rx + w + 2, y2: ry + h + 2 };
+}
+
+function rectsOverlap(a: LabelRect, b: LabelRect): boolean {
+  return a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a.y2 > b.y1;
+}
+
 export const MAP_PX = 600;
 
 let cachedTerrainCanvas: HTMLCanvasElement | null = null;
@@ -173,30 +211,33 @@ export function getOrBuildTerrainCanvas(): HTMLCanvasElement {
     {
       label: "💧 Hồ Oasis",
       x: WORLD_CONFIG.oasisX,
-      z: WORLD_CONFIG.oasisZ - 36,
+      z: WORLD_CONFIG.oasisZ - 42,
       color: "#7dd3fc",
     },
     {
       label: "💧 Hồ Cao Nguyên",
       x: WORLD_CONFIG.highlandLakeX,
-      z: WORLD_CONFIG.highlandLakeZ - 44,
+      z: WORLD_CONFIG.highlandLakeZ - 48,
       color: "#7dd3fc",
     },
-    { label: "🏔️ Núi Đá Đông Nam", x: 210, z: 170, color: "#e2e8f0" },
-    { label: "🏔️ Đỉnh Tây Bắc", x: -220, z: -160, color: "#e2e8f0" },
-    { label: "🌿 Thung Lũng Trũng", x: -140, z: 20, color: "#bbf7d0" },
-    { label: "⭐ Bãi Cỏ Trung Tâm", x: 0, z: 20, color: "#fef08a" },
+    { label: "🏔️ Núi Đá Đông Nam", x: 215, z: 175, color: "#e2e8f0" },
+    { label: "🏔️ Đỉnh Tây Bắc", x: -220, z: -165, color: "#e2e8f0" },
+    { label: "🌿 Thung Lũng", x: -165, z: -28, color: "#bbf7d0" },
+    { label: "⭐ Trung Tâm", x: 0, z: 36, color: "#fef08a" },
   ];
 
-  ctx.font = "bold 12px Inter, system-ui, sans-serif";
-  ctx.textAlign = "center";
+  LANDMARK_BOXES.length = 0;
   for (const lm of landmarks) {
     const [lx, ly] = worldToMap(lm.x, lm.z);
-    ctx.fillStyle = "rgba(2, 6, 23, 0.8)";
-    ctx.fillText(lm.label, lx + 1, ly + 1);
-    ctx.fillStyle = lm.color;
-    ctx.fillText(lm.label, lx, ly);
+    LANDMARK_BOXES.push(drawLabelPill(ctx, lm.label, lx, ly, lm.color));
   }
+
+  // Kim chỉ hướng la bàn góc viền bản đồ
+  ctx.font = "700 10px Inter, system-ui, sans-serif";
+  ctx.fillStyle = "rgba(226, 232, 240, 0.72)";
+  ctx.textAlign = "center";
+  ctx.fillText("BẮC (N)", MAP_PX / 2, 14);
+  ctx.fillText("NAM (S)", MAP_PX / 2, MAP_PX - 6);
 
   cachedTerrainCanvas = offscreen;
   return offscreen;
@@ -242,7 +283,15 @@ export function renderWorldMapFrame(
     }
   }
 
-  // 3. Các sinh vật khác (ưu tiên đồng đội bầy đàn màu xanh dương)
+  // 3. Các sinh vật khác (ưu tiên đồng đội bầy đàn màu xanh dương, chống đè chữ)
+  const labelCandidates: Array<{
+    name: string;
+    px: number;
+    py: number;
+    color: string;
+    priority: number;
+  }> = [];
+
   for (const id in playersMutable) {
     if (id === myId) continue;
     const p = playersMutable[id];
@@ -278,14 +327,39 @@ export function renderWorldMapFrame(
       ctx.stroke();
     }
 
-    if (isPackmate || !p.isAi || (p.growth && p.growth >= 1.25)) {
-      ctx.font = "bold 11px Inter, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillStyle = "rgba(2, 6, 23, 0.85)";
-      ctx.fillText(p.name, px + 1, py - 8);
-      ctx.fillStyle = isPackmate ? "#7dd3fc" : !p.isAi ? "#fca5a5" : "#e9d5ff";
-      ctx.fillText(p.name, px, py - 9);
+    if (isPackmate || !p.isAi || (p.growth && p.growth >= 1.28)) {
+      labelCandidates.push({
+        name: p.name,
+        px,
+        py: py - 9,
+        color: isPackmate ? "#7dd3fc" : !p.isAi ? "#fca5a5" : "#e9d5ff",
+        priority: isPackmate ? 3 : !p.isAi ? 2 : 1,
+      });
     }
+  }
+
+  labelCandidates.sort((a, b) => b.priority - a.priority);
+  const drawnBoxes: LabelRect[] = [...LANDMARK_BOXES];
+  ctx.font = "600 10.5px Inter, system-ui, sans-serif";
+  for (const item of labelCandidates) {
+    const w = ctx.measureText(item.name).width + 10;
+    const box: LabelRect = {
+      x1: item.px - w / 2 - 2,
+      y1: item.py - 14,
+      x2: item.px + w / 2 + 2,
+      y2: item.py + 4,
+    };
+    if (drawnBoxes.some((b) => rectsOverlap(b, box))) continue;
+    drawnBoxes.push(
+      drawLabelPill(
+        ctx,
+        item.name,
+        item.px,
+        item.py,
+        item.color,
+        "600 10.5px Inter, system-ui, sans-serif",
+      ),
+    );
   }
 
   const [meX, meY] = worldToMap(

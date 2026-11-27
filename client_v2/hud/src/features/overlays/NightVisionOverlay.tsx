@@ -40,7 +40,7 @@ export const NightVisionOverlay: React.FC = () => {
       <div
         style={{
           position: "absolute",
-          top: "18px",
+          top: "64px",
           left: "50%",
           transform: "translateX(-50%)",
           background: "rgba(4, 38, 29, 0.86)",

@@ -103,6 +103,8 @@ class NativeIpcSocket {
     ws.onclose = (ev) => {
       if (this.ws !== ws) return;
       console.warn("[IPC] Disconnected:", ev.code, ev.reason);
+      smoothedFps = 60;
+      lastFpsCommitAt = 0;
       useGameStore.getState().setIpcConnected(false);
       this.ws = null;
       if (!this.intentionalClose) {
@@ -123,11 +125,11 @@ class NativeIpcSocket {
         } else {
           smoothedFps = smoothedFps * 0.85 + rawFps * 0.15;
         }
-      }
-      const now = performance.now();
-      if (lastFpsCommitAt === 0 || now - lastFpsCommitAt >= 500) {
-        lastFpsCommitAt = now;
-        nextFps = Math.round(smoothedFps);
+        const now = performance.now();
+        if (lastFpsCommitAt === 0 || now - lastFpsCommitAt >= 500) {
+          lastFpsCommitAt = now;
+          nextFps = Math.round(smoothedFps);
+        }
       }
       store.applyLocalTelemetry({ ...msg, fps: nextFps });
       return;
